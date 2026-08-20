@@ -1,0 +1,42 @@
+name: 수위 데이터 갱신
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-water-levels
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 최신 수위 데이터 수집
+        env:
+          HRFCO_API_KEY: ${{ secrets.HRFCO_API_KEY }}
+        run: node backend/fetch-water-levels.mjs
+
+      - name: 변경 데이터 커밋
+        run: |
+          git config user.name "disaster-radar-bot"
+          git config user.email "disaster-radar-bot@users.noreply.github.com"
+          git add data/water-levels.json
+          if git diff --cached --quiet; then
+            echo "변경된 수위 데이터가 없습니다."
+          else
+            git commit -m "[수정] 실시간 수위 데이터 갱신"
+            git push
+          fi
