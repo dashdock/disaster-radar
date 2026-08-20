@@ -3,20 +3,21 @@
 
 <style>
   :root {
-    --bg: #0B1220;
-    --panel: #121B2E;
-    --panel-inner: #0E1728;
-    --border: #22314A;
-    --text: #E8EDF5;
-    --text-dim: #8A9BB8;
-    --text-faint: #5A6C8A;
+    --bg: #F7F9FC;
+    --panel: #FFFFFF;
+    --panel-inner: #F4F7FB;
+    --border: #DCE3ED;
+    --text: #172033;
+    --text-dim: #5E6C84;
+    --text-faint: #8491A6;
     --blue: #4C8DFF;
     --yellow: #FFC53D;
     --orange: #FF8A3D;
     --red: #FF4D4D;
   }
   * { box-sizing: border-box; }
-  body, .rd-root { margin: 0; }
+  body, .rd-root { margin: 0; min-height: 100vh; }
+  body { background: var(--bg); }
   .rd-root {
     background: var(--bg);
     color: var(--text);
@@ -39,7 +40,7 @@
   }
   .rd-search-dropdown { position: absolute; top: 110%; left: 0; right: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 500; display: none; }
   .rd-search-item { padding: 8px 12px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; }
-  .rd-search-item:hover { background: #1A2740; }
+  .rd-search-item:hover { background: #EEF3F9; }
 
   .rd-clock { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 
@@ -65,14 +66,14 @@
   .rd-row-value { font-size: 13.5px; color: var(--text); padding-left: 21px; }
 
   .rd-alerts-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); margin-bottom: 8px; }
-  .rd-alert-item { font-size: 11.5px; color: #C6D0E2; background: var(--panel-inner); border: 1px solid #1E2A42; border-radius: 6px; padding: 7px 10px; }
+  .rd-alert-item { font-size: 11.5px; color: #334158; background: var(--panel-inner); border: 1px solid #E3E9F1; border-radius: 6px; padding: 7px 10px; }
   .rd-alerts-list { display: flex; flex-direction: column; gap: 7px; }
 
   .rd-ticker { margin-top: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 0; display: flex; align-items: center; overflow: hidden; }
   .rd-ticker-live { display: flex; align-items: center; gap: 6px; padding: 0 14px; flex-shrink: 0; border-right: 1px solid var(--border); }
   .rd-ticker-track-wrap { overflow: hidden; flex: 1; margin-left: 14px; }
   .rd-ticker-track { display: inline-flex; white-space: nowrap; animation: marquee 26s linear infinite; }
-  .rd-ticker-item { font-size: 12px; color: #C6D0E2; margin-right: 40px; }
+  .rd-ticker-item { font-size: 12px; color: #334158; margin-right: 40px; }
 
   .rd-footnote { margin-top: 14px; font-size: 10.5px; color: var(--text-faint); text-align: center; }
 
@@ -82,16 +83,17 @@
     70% { transform: scale(2.4); opacity: 0; }
     100% { transform: scale(2.4); opacity: 0; }
   }
-  .rd-marker-dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #0B1220; position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .rd-marker-dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #FFFFFF; position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; font-size: 13px; }
   .rd-marker-ring { position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; border-radius: 50%; transform: translate(-50%, -50%); animation: pulse-ring 1.8s ease-out infinite; z-index: 1; }
-  .rd-marker-wrap.selected .rd-marker-dot { box-shadow: 0 0 0 4px rgba(255,255,255,0.2); }
+  .rd-marker-wrap.selected .rd-marker-dot { box-shadow: 0 0 0 4px rgba(23,32,51,0.18); }
   .rd-type-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border-radius: 999px; padding: 2px 9px; }
 
-  /* Leaflet dark theme overrides */
+  /* Leaflet light theme overrides */
   .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
   .leaflet-popup-tip { background: var(--panel); }
   .leaflet-popup-content { font-family: inherit; font-size: 12.5px; margin: 10px 12px; }
   .leaflet-container { background: var(--bg); }
+  .leaflet-control-zoom a { color: var(--text); }
 </style>
 
 <div class="rd-root">
@@ -128,7 +130,7 @@
 
   <div class="rd-main">
     <div class="rd-map-panel">
-      <div class="rd-map-caption">📍 실제 지리 좌표 기반 지도 · 마커 클릭 시 상세 확인</div>
+      <div class="rd-map-caption">📍 OpenStreetMap 실시간 지도 · 드래그 및 확대·축소 가능 · 마커 클릭 시 상세 확인</div>
       <div id="rd-map"></div>
     </div>
 
@@ -144,7 +146,7 @@
     </div>
   </div>
 
-  <div class="rd-footnote">※ 현재 화면은 목업(mock) 데이터입니다. 실서비스 전환 시 기상청 API허브 · 공공데이터포털 재난문자 · 질병관리청 감염병포털 · 국토부 브이월드 드론구역 API로 교체 예정입니다. 지도는 Leaflet + CARTO 무료 타일 사용 중이며, 카카오맵 API 키 발급 후 교체 가능합니다.</div>
+  <div class="rd-footnote">※ 지도는 Leaflet + OpenStreetMap 실시간 타일을 사용합니다. 재난·기상 정보는 현재 목업(mock) 데이터이며, 추후 기상청 API허브 · 공공데이터포털 재난문자 · 질병관리청 감염병포털 · 국토부 브이월드 드론구역 API로 교체 예정입니다.</div>
 </div>
 
 <script>
@@ -270,10 +272,14 @@
   setInterval(tickClock, 1000);
 
   // Map
-  const map = L.map("rd-map", { zoomControl: true, attributionControl: true }).setView([36.4, 127.9], 7);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    subdomains: "abcd",
+  const map = L.map("rd-map", {
+    zoomControl: true,
+    attributionControl: true,
+    scrollWheelZoom: true,
+    doubleClickZoom: true,
+  }).setView([36.4, 127.9], 7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(map);
 
