@@ -159,6 +159,9 @@
         <div class="rd-map-caption">📍 확대 후 지도 클릭 시 읍·면·동 확인 · 일반/위성 지도 전환</div>
         <div class="rd-map-actions">
           <button class="rd-radar-toggle" id="rd-radar-toggle" type="button">🌧 강수 레이더 켜기</button>
+          <button class="rd-sensor-toggle active" id="rd-rainfall-toggle" type="button">☔ 강우 센서</button>
+          <button class="rd-sensor-toggle active" id="rd-dam-toggle" type="button">🏞 댐</button>
+          <button class="rd-sensor-toggle active" id="rd-weir-toggle" type="button">🌉 보</button>
           <button class="rd-sensor-toggle active" id="rd-sensor-toggle" type="button">💧 수위 센서 불러오는 중</button>
         </div>
       </div>
@@ -268,10 +271,14 @@
   const WATCHED_REGIONS_KEY = "disaster-radar-watched-regions";
   const NOTIFIED_SENSOR_EVENTS_KEY = "disaster-radar-notified-sensor-events";
   const SENSOR_STATUS_COLORS = {
-    정상: "#20A47A", 관심: "#4C8DFF", 주의: "#E9A800", 경계: "#FF8A3D", 심각: "#FF4D4D", 통신두절: "#98A2B3",
+    정상: "#20A47A", 관심: "#4C8DFF", 주의: "#E9A800", 경계: "#FF8A3D", 심각: "#FF4D4D", 기준초과: "#FF8A3D", 통신두절: "#98A2B3",
   };
   const sensorLayer = L.layerGroup();
+  const rainfallLayer = L.layerGroup();
+  const damLayer = L.layerGroup();
+  const weirLayer = L.layerGroup();
   let sensorStations = [];
+  let hydrologySensors = [];
   let sensorsVisible = true;
   let radarLayer = null;
   let radarVisible = false;
@@ -470,6 +477,9 @@
   });
 
   sensorLayer.addTo(map);
+  rainfallLayer.addTo(map);
+  damLayer.addTo(map);
+  weirLayer.addTo(map);
 
   function showAlertBanner(alerts) {
     const banner = document.getElementById("rd-alert-banner");
@@ -479,13 +489,13 @@
       return;
     }
     const first = alerts[0];
-    text.textContent = `⚠ 관심 지역 수위 경고: ${first.name} ${first.waterLevel}m (${first.status})${alerts.length > 1 ? ` 외 ${alerts.length - 1}건` : ""}`;
+    text.textContent = `⚠ 관심 지역 센서 경고: ${first.type || "수위"} · ${first.name} ${first.waterLevel == null ? "" : `${first.waterLevel}m `}(${first.status})${alerts.length > 1 ? ` 외 ${alerts.length - 1}건` : ""}`;
     banner.classList.add("show");
   }
 
   function checkWatchedRegionAlerts(stations) {
     const watchedRegions = getStoredSet(WATCHED_REGIONS_KEY);
-    const alertLevels = new Set(["관심", "주의", "경계", "심각"]);
+    const alertLevels = new Set(["관심", "주의", "경계", "심각", "기준초과"]);
     const alerts = stations.filter(station => watchedRegions.has(station.regionId) && alertLevels.has(station.status));
     showAlertBanner(alerts);
 
@@ -494,8 +504,8 @@
       const eventId = `${station.code}:${station.observedAt}:${station.status}`;
       if (notifiedEvents.has(eventId)) return;
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(`수위 ${station.status} · ${station.name}`, {
-          body: `현재 ${station.waterLevel}m · ${formatObservedAt(station.observedAt)}`,
+        new Notification(`${station.type || "수위"} ${station.status} · ${station.name}`, {
+          body: `${station.waterLevel == null ? "측정값 없음" : `현재 ${station.waterLevel}m`} · ${formatObservedAt(station.observedAt)}`,
           icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2250%22 font-size=%2250%22>💧</text></svg>",
         });
       }
@@ -524,6 +534,72 @@
     });
   }
 
+  function renderAuxiliarySensorDetail(station) {
+    const detail = document.getElementById("rd-sensor-detail");
+    if (!detail) return;
+    const color = SENSOR_STATUS_COLORS[station.status] || SENSOR_STATUS_COLORS.통신두절;
+    const typeIcon = { 강우: "☔", 댐: "🏞", 보: "🌉" }[station.type] || "📡";
+    const primary = station.type === "강우"
+      ? { label: "10분 강우량", value: station.rainfall10m == null ? "-" : `${station.rainfall10m}mm` }
+      : { label: "현재 수위", value: station.waterLevel == null ? "-" : `${station.waterLevel}m` };
+    const secondary = station.type === "강우"
+      ? { label: "관측 시각", value: formatObservedAt(station.observedAt) }
+      : { label: "유입 / 방류", value: `${station.inflow ?? "-"} / ${station.discharge ?? "-"}㎥/s` };
+    const thresholds = Object.entries(station.thresholds || {}).filter(([, value]) => value != null)
+      .map(([name, value]) => `${name} ${value}m`).join(" · ");
+    detail.innerHTML = `
+      <div class="rd-sensor-card">
+        <div class="rd-sensor-card-title">
+          <span>${typeIcon} ${escapeHtml(station.name)} · ${escapeHtml(station.type)}</span>
+          <span style="color:${color};">${escapeHtml(station.status)}</span>
+        </div>
+        <div class="rd-sensor-grid">
+          <div>${primary.label}<span class="rd-sensor-value">${escapeHtml(primary.value)}</span></div>
+          <div>${secondary.label}<span class="rd-sensor-value">${escapeHtml(secondary.value)}</span></div>
+        </div>
+        <div style="font-size:10.5px;color:var(--text-dim);margin-top:9px;">${escapeHtml(station.address)}</div>
+        ${thresholds ? `<div style="font-size:10.5px;color:var(--text-dim);margin-top:4px;">공식 기준: ${escapeHtml(thresholds)}</div>` : ""}
+        <div style="font-size:10px;color:var(--text-faint);margin-top:4px;">관측 ${escapeHtml(formatObservedAt(station.observedAt))}</div>
+      </div>`;
+  }
+
+  function renderAuxiliaryLayer(stations, layer, style) {
+    layer.clearLayers();
+    stations.forEach(station => {
+      const color = station.status === "정상" ? style.color : (SENSOR_STATUS_COLORS[station.status] || SENSOR_STATUS_COLORS.통신두절);
+      const value = station.type === "강우" ? `${station.rainfall10m ?? "-"}mm` : `${station.waterLevel ?? "-"}m`;
+      const marker = L.circleMarker([station.lat, station.lng], {
+        radius: station.status === "정상" ? style.radius : style.radius + 2,
+        color: "#FFFFFF", weight: 1, fillColor: color,
+        fillOpacity: station.status === "통신두절" ? 0.4 : 0.84,
+      }).bindTooltip(`${escapeHtml(station.type)} · ${escapeHtml(station.name)} · ${escapeHtml(value)} · ${escapeHtml(station.status)}`);
+      marker.on("click", () => {
+        selectRegion(station.regionId, false);
+        renderAuxiliarySensorDetail(station);
+      });
+      marker.addTo(layer);
+    });
+  }
+
+  async function loadHydrologySensors() {
+    try {
+      const response = await fetch(`data/hydrology.json?t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      renderAuxiliaryLayer(payload.rainfall || [], rainfallLayer, { color: "#4385F5", radius: 2.5 });
+      renderAuxiliaryLayer(payload.dams || [], damLayer, { color: "#7757C8", radius: 5 });
+      renderAuxiliaryLayer(payload.weirs || [], weirLayer, { color: "#00A5A8", radius: 5 });
+      hydrologySensors = [...(payload.rainfall || []), ...(payload.dams || []), ...(payload.weirs || [])];
+      document.getElementById("rd-rainfall-toggle").textContent = `☔ 강우 ${payload.counts?.rainfall || 0}`;
+      document.getElementById("rd-dam-toggle").textContent = `🏞 댐 ${payload.counts?.dams || 0}`;
+      document.getElementById("rd-weir-toggle").textContent = `🌉 보 ${payload.counts?.weirs || 0}`;
+      checkWatchedRegionAlerts([...sensorStations, ...hydrologySensors]);
+    } catch (error) {
+      ["rd-rainfall-toggle", "rd-dam-toggle", "rd-weir-toggle"].forEach(id => document.getElementById(id).classList.remove("active"));
+      console.error("Failed to load hydrology sensors", error);
+    }
+  }
+
   async function loadWaterSensors() {
     const toggle = document.getElementById("rd-sensor-toggle");
     try {
@@ -535,7 +611,7 @@
       const activeCount = sensorStations.filter(station => station.waterLevel != null).length;
       toggle.textContent = `💧 수위 센서 ${activeCount.toLocaleString()}개 · 10분 갱신`;
       toggle.title = `데이터 생성: ${new Date(payload.generatedAt).toLocaleString("ko-KR")}`;
-      checkWatchedRegionAlerts(sensorStations);
+      checkWatchedRegionAlerts([...sensorStations, ...hydrologySensors]);
     } catch (error) {
       toggle.textContent = "💧 수위 센서 불러오기 실패";
       toggle.classList.remove("active");
@@ -550,6 +626,19 @@
     else sensorLayer.removeFrom(map);
     sensorToggle.classList.toggle("active", sensorsVisible);
   });
+
+  function bindLayerToggle(buttonId, layer) {
+    const button = document.getElementById(buttonId);
+    button.addEventListener("click", () => {
+      const visible = map.hasLayer(layer);
+      if (visible) layer.removeFrom(map);
+      else layer.addTo(map);
+      button.classList.toggle("active", !visible);
+    });
+  }
+  bindLayerToggle("rd-rainfall-toggle", rainfallLayer);
+  bindLayerToggle("rd-dam-toggle", damLayer);
+  bindLayerToggle("rd-weir-toggle", weirLayer);
 
   document.getElementById("rd-alert-banner-close").addEventListener("click", () => {
     document.getElementById("rd-alert-banner").classList.remove("show");
@@ -622,7 +711,7 @@
       }
       storeSet(WATCHED_REGIONS_KEY, watchedRegions);
       render();
-      checkWatchedRegionAlerts(sensorStations);
+      checkWatchedRegionAlerts([...sensorStations, ...hydrologySensors]);
     });
   }
 
@@ -711,6 +800,8 @@
 
   loadWaterSensors();
   setInterval(loadWaterSensors, 10 * 60 * 1000);
+  loadHydrologySensors();
+  setInterval(loadHydrologySensors, 10 * 60 * 1000);
   loadLatestRadar();
   setInterval(loadLatestRadar, 5 * 60 * 1000);
 })();
