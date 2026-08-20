@@ -1,0 +1,410 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0B1220;
+    --panel: #121B2E;
+    --panel-inner: #0E1728;
+    --border: #22314A;
+    --text: #E8EDF5;
+    --text-dim: #8A9BB8;
+    --text-faint: #5A6C8A;
+    --blue: #4C8DFF;
+    --yellow: #FFC53D;
+    --orange: #FF8A3D;
+    --red: #FF4D4D;
+  }
+  * { box-sizing: border-box; }
+  body, .rd-root { margin: 0; }
+  .rd-root {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Pretendard','Apple SD Gothic Neo','Malgun Gothic',-apple-system,BlinkMacSystemFont,sans-serif;
+    padding: 20px;
+  }
+  .rd-mono { font-family: 'SF Mono','Consolas','JetBrains Mono',monospace; letter-spacing: 0.02em; }
+
+  .rd-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .rd-brand { display: flex; align-items: center; gap: 10px; }
+  .rd-brand-icon { width: 34px; height: 34px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
+  .rd-brand-title { font-size: 16px; font-weight: 700; letter-spacing: 0.01em; }
+  .rd-brand-sub { font-size: 11px; color: var(--text-dim); }
+
+  .rd-search-wrap { position: relative; flex: 1 1 260px; max-width: 360px; }
+  .rd-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 13px; pointer-events: none; }
+  .rd-search-input {
+    width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px 9px 32px; color: var(--text); font-size: 13px; outline: none;
+  }
+  .rd-search-dropdown { position: absolute; top: 110%; left: 0; right: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 500; display: none; }
+  .rd-search-item { padding: 8px 12px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; }
+  .rd-search-item:hover { background: #1A2740; }
+
+  .rd-clock { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+
+  .rd-legend-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .rd-legend-caption { font-size: 10.5px; color: var(--text-faint); width: 64px; flex-shrink: 0; }
+  .rd-legend { display: flex; gap: 10px; flex-wrap: wrap; }
+  .rd-legend-item { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 11.5px; color: var(--text-dim); }
+  .rd-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .rd-legends-wrap { margin-bottom: 16px; }
+
+  .rd-main { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); gap: 16px; }
+  .rd-map-panel { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .rd-map-caption { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  #rd-map { height: 540px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+
+  .rd-detail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .rd-detail-label { font-size: 11px; color: var(--text-dim); }
+  .rd-detail-name-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .rd-detail-name { font-size: 20px; font-weight: 700; }
+  .rd-level-badge { font-size: 11px; border-radius: 999px; padding: 2px 9px; }
+
+  .rd-row-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; }
+  .rd-row-value { font-size: 13.5px; color: var(--text); padding-left: 21px; }
+
+  .rd-alerts-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); margin-bottom: 8px; }
+  .rd-alert-item { font-size: 11.5px; color: #C6D0E2; background: var(--panel-inner); border: 1px solid #1E2A42; border-radius: 6px; padding: 7px 10px; }
+  .rd-alerts-list { display: flex; flex-direction: column; gap: 7px; }
+
+  .rd-ticker { margin-top: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 0; display: flex; align-items: center; overflow: hidden; }
+  .rd-ticker-live { display: flex; align-items: center; gap: 6px; padding: 0 14px; flex-shrink: 0; border-right: 1px solid var(--border); }
+  .rd-ticker-track-wrap { overflow: hidden; flex: 1; margin-left: 14px; }
+  .rd-ticker-track { display: inline-flex; white-space: nowrap; animation: marquee 26s linear infinite; }
+  .rd-ticker-item { font-size: 12px; color: #C6D0E2; margin-right: 40px; }
+
+  .rd-footnote { margin-top: 14px; font-size: 10.5px; color: var(--text-faint); text-align: center; }
+
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    70% { transform: scale(2.4); opacity: 0; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .rd-marker-dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #0B1220; position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .rd-marker-ring { position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; border-radius: 50%; transform: translate(-50%, -50%); animation: pulse-ring 1.8s ease-out infinite; z-index: 1; }
+  .rd-marker-wrap.selected .rd-marker-dot { box-shadow: 0 0 0 4px rgba(255,255,255,0.2); }
+  .rd-type-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border-radius: 999px; padding: 2px 9px; }
+
+  /* Leaflet dark theme overrides */
+  .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content { font-family: inherit; font-size: 12.5px; margin: 10px 12px; }
+  .leaflet-container { background: var(--bg); }
+</style>
+
+<div class="rd-root">
+  <div class="rd-header">
+    <div class="rd-brand">
+      <div class="rd-brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4C8DFF" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/></svg>
+      </div>
+      <div>
+        <div class="rd-brand-title">재난레이더</div>
+        <div class="rd-brand-sub">전국 재난·안전 통합 상황판</div>
+      </div>
+    </div>
+
+    <div class="rd-search-wrap">
+      <span class="rd-search-icon">⌕</span>
+      <input id="rd-search" class="rd-search-input" placeholder="지역 검색 (예: 부산, 강원)" autocomplete="off" />
+      <div id="rd-search-dropdown" class="rd-search-dropdown"></div>
+    </div>
+
+    <div class="rd-clock rd-mono" id="rd-clock"></div>
+  </div>
+
+  <div class="rd-legends-wrap">
+    <div class="rd-legend-row">
+      <span class="rd-legend-caption">심각도</span>
+      <div class="rd-legend" id="rd-legend"></div>
+    </div>
+    <div class="rd-legend-row">
+      <span class="rd-legend-caption">재난 유형</span>
+      <div class="rd-legend" id="rd-type-legend"></div>
+    </div>
+  </div>
+
+  <div class="rd-main">
+    <div class="rd-map-panel">
+      <div class="rd-map-caption">📍 실제 지리 좌표 기반 지도 · 마커 클릭 시 상세 확인</div>
+      <div id="rd-map"></div>
+    </div>
+
+    <div class="rd-detail-panel" id="rd-detail"></div>
+  </div>
+
+  <div class="rd-ticker">
+    <div class="rd-ticker-live">
+      <span class="rd-mono" style="font-size:11px;color:#FF8A3D;">● LIVE</span>
+    </div>
+    <div class="rd-ticker-track-wrap">
+      <div class="rd-ticker-track" id="rd-ticker-track"></div>
+    </div>
+  </div>
+
+  <div class="rd-footnote">※ 현재 화면은 목업(mock) 데이터입니다. 실서비스 전환 시 기상청 API허브 · 공공데이터포털 재난문자 · 질병관리청 감염병포털 · 국토부 브이월드 드론구역 API로 교체 예정입니다. 지도는 Leaflet + CARTO 무료 타일 사용 중이며, 카카오맵 API 키 발급 후 교체 가능합니다.</div>
+</div>
+
+<script>
+(function () {
+  const LEVEL_COLORS = { 관심: "#4C8DFF", 주의: "#FFC53D", 경계: "#FF8A3D", 심각: "#FF4D4D" };
+  const LEVEL_LABEL = { 관심: "LV.1 관심", 주의: "LV.2 주의", 경계: "LV.3 경계", 심각: "LV.4 심각" };
+
+  // 재난 유형(무슨 재난인지)은 심각도(관심~심각)와 별개의 축입니다.
+  // 실제 기상특보/재난안전 체계를 참고한 분류 (자연재난 + 일부 사회재난)
+  const TYPE_META = {
+    태풍:   { icon: "🌀", label: "태풍" },
+    호우:   { icon: "🌊", label: "호우·홍수" },
+    대설:   { icon: "❄️", label: "대설" },
+    폭염:   { icon: "🔥", label: "폭염" },
+    한파:   { icon: "🥶", label: "한파" },
+    강풍:   { icon: "💨", label: "강풍" },
+    산사태: { icon: "⛰️", label: "산사태" },
+    지진:   { icon: "📳", label: "지진" },
+    없음:   { icon: "✅", label: "특이사항 없음" },
+  };
+
+  const REGIONS = [
+    { id:"gangwon", name:"강원", lat:37.8228, lng:128.1555, level:"경계", type:"산사태", temp:24, cond:"흐림·강풍", precip:40,
+      epidemic:"특이사항 없음", drone:"산불감시 공역 인접 · 사전승인 필요",
+      alerts:[{time:"09:40",type:"산사태",text:"산사태주의보 발효 (평창·정선)"},{time:"07:12",type:"강풍",text:"강풍주의보 발효"}] },
+    { id:"gyeonggi", name:"경기", lat:37.4138, lng:127.5183, level:"관심", type:"없음", temp:28, cond:"맑음", precip:10,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"11:20",type:"없음",text:"도로 공사 구간 서행 안내"},{time:"08:05",type:"없음",text:"미세먼지 보통"}] },
+    { id:"incheon", name:"인천", lat:37.4563, lng:126.7052, level:"관심", type:"없음", temp:27, cond:"구름조금", precip:15,
+      epidemic:"특이사항 없음", drone:"공항 관제권 · 비행 전 승인 필수",
+      alerts:[{time:"10:02",type:"없음",text:"해안 안개주의보 해제"},{time:"06:30",type:"없음",text:"만조 시각 안내"}] },
+    { id:"seoul", name:"서울", lat:37.5665, lng:126.9780, level:"관심", type:"강풍", temp:29, cond:"맑음", precip:10,
+      epidemic:"계절 독감 유행주의보", drone:"도심 비행금지구역 · 사전승인 필수",
+      alerts:[{time:"14:02",type:"강풍",text:"강풍주의보 발효"},{time:"09:15",type:"없음",text:"미세먼지 보통"},{time:"07:40",type:"없음",text:"한강 수위 정상"}] },
+    { id:"chungbuk", name:"충북", lat:36.6357, lng:127.4917, level:"관심", type:"없음", temp:28, cond:"구름많음", precip:20,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"08:55",type:"호우",text:"저수지 수위 상승 관찰중"}] },
+    { id:"sejong", name:"세종", lat:36.4800, lng:127.2890, level:"관심", type:"없음", temp:28, cond:"맑음", precip:10,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"07:30",type:"없음",text:"특이사항 없음"}] },
+    { id:"daejeon", name:"대전", lat:36.3504, lng:127.3845, level:"관심", type:"없음", temp:29, cond:"맑음", precip:10,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"09:00",type:"없음",text:"갑천 수위 정상"}] },
+    { id:"gyeongbuk", name:"경북", lat:36.4919, lng:128.8889, level:"주의", type:"호우", temp:27, cond:"비", precip:70,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"12:10",type:"호우",text:"호우주의보 발효 (포항·경주)"},{time:"10:45",type:"호우",text:"하천 급류 유의"}] },
+    { id:"daegu", name:"대구", lat:35.8714, lng:128.6014, level:"주의", type:"폭염", temp:31, cond:"맑음·폭염", precip:0,
+      epidemic:"온열질환 주의 안내", drone:"비행제한구역 아님",
+      alerts:[{time:"13:00",type:"폭염",text:"폭염주의보 발효"}] },
+    { id:"chungnam", name:"충남", lat:36.5184, lng:126.8000, level:"주의", type:"호우", temp:27, cond:"비", precip:60,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"11:30",type:"호우",text:"호우주의보 발효 (서산·태안)"},{time:"08:20",type:"호우",text:"해안 파고 상승"}] },
+    { id:"jeonbuk", name:"전북", lat:35.7175, lng:127.1530, level:"관심", type:"없음", temp:28, cond:"구름많음", precip:30,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"09:10",type:"없음",text:"특이사항 없음"}] },
+    { id:"gyeongnam", name:"경남", lat:35.4606, lng:128.2132, level:"주의", type:"호우", temp:29, cond:"비", precip:65,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"12:40",type:"호우",text:"호우주의보 발효 (거제·통영)"},{time:"10:05",type:"호우",text:"저지대 침수 유의"}] },
+    { id:"ulsan", name:"울산", lat:35.5384, lng:129.3114, level:"관심", type:"없음", temp:29, cond:"구름조금", precip:20,
+      epidemic:"특이사항 없음", drone:"산업단지 인접 · 사전승인 필요",
+      alerts:[{time:"08:00",type:"없음",text:"특이사항 없음"}] },
+    { id:"gwangju", name:"광주", lat:35.1595, lng:126.8526, level:"관심", type:"없음", temp:29, cond:"맑음", precip:10,
+      epidemic:"특이사항 없음", drone:"비행제한구역 아님",
+      alerts:[{time:"07:50",type:"없음",text:"특이사항 없음"}] },
+    { id:"jeonnam", name:"전남", lat:34.8161, lng:126.4629, level:"경계", type:"호우", temp:27, cond:"폭우", precip:85,
+      epidemic:"특이사항 없음", drone:"태풍 대비 비행 자제 권고",
+      alerts:[{time:"13:20",type:"호우",text:"호우경계경보 발효 (여수·순천)"},{time:"12:00",type:"호우",text:"해안 저지대 대피 권고"},{time:"10:30",type:"호우",text:"하천 범람 위험"}] },
+    { id:"busan", name:"부산", lat:35.1796, lng:129.0756, level:"주의", type:"강풍", temp:30, cond:"비바람", precip:55,
+      epidemic:"특이사항 없음", drone:"해안 강풍 · 비행 자제 권고",
+      alerts:[{time:"12:50",type:"강풍",text:"강풍주의보 발효"},{time:"09:40",type:"강풍",text:"해안도로 통제 구간 안내"}] },
+    { id:"jeju", name:"제주", lat:33.4996, lng:126.5312, level:"심각", type:"태풍", temp:26, cond:"태풍 직접영향", precip:95,
+      epidemic:"특이사항 없음", drone:"전 지역 비행금지 · 태풍 통과중",
+      alerts:[{time:"14:15",type:"태풍",text:"태풍경보 발효 · 즉시 대피 권고"},{time:"13:00",type:"태풍",text:"항공편 전편 결항"},{time:"11:20",type:"태풍",text:"해안도로 전면 통제"}] },
+  ];
+
+  const TICKER_ITEMS = [
+    "🌀 [제주] 태풍경보 발효 · 항공편 전편 결항",
+    "🌊 [전남 여수] 호우경계경보 발효 · 해안 저지대 대피 권고",
+    "🌊 [경북 포항] 호우주의보 발효 · 하천 급류 유의",
+    "⛰️ [강원 평창] 산사태주의보 발효",
+    "🔥 [대구] 폭염주의보 발효 · 온열질환 유의",
+    "💨 [부산] 강풍주의보 · 해안도로 통제 구간 발생",
+  ];
+
+  let selectedId = "seoul";
+  const markers = {};
+
+  // Legend
+  const legendEl = document.getElementById("rd-legend");
+  const counts = { 관심: 0, 주의: 0, 경계: 0, 심각: 0 };
+  REGIONS.forEach(r => counts[r.level]++);
+  legendEl.innerHTML = Object.entries(LEVEL_LABEL).map(([key, label]) => `
+    <div class="rd-legend-item">
+      <span class="rd-legend-dot" style="background:${LEVEL_COLORS[key]};box-shadow:0 0 6px ${LEVEL_COLORS[key]};"></span>
+      ${label} <span style="color:var(--text);">· ${counts[key]}개 지역</span>
+    </div>
+  `).join("");
+
+  const typeLegendEl = document.getElementById("rd-type-legend");
+  const activeTypes = [...new Set(REGIONS.map(r => r.type).filter(t => t && t !== "없음"))];
+  typeLegendEl.innerHTML = activeTypes.map(key => `
+    <div class="rd-legend-item">
+      <span>${TYPE_META[key].icon}</span> ${TYPE_META[key].label}
+      <span style="color:var(--text);">· ${REGIONS.filter(r => r.type === key).length}개 지역</span>
+    </div>
+  `).join("");
+
+  // Ticker
+  const trackEl = document.getElementById("rd-ticker-track");
+  const dup = [...TICKER_ITEMS, ...TICKER_ITEMS];
+  trackEl.innerHTML = dup.map(t => `<span class="rd-ticker-item rd-mono">${t}</span>`).join("");
+
+  // Clock
+  function formatClock(d) {
+    const days = ["일","월","화","수","목","금","토"];
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())}(${days[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} KST`;
+  }
+  const clockEl = document.getElementById("rd-clock");
+  function tickClock() { clockEl.textContent = formatClock(new Date()); }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // Map
+  const map = L.map("rd-map", { zoomControl: true, attributionControl: true }).setView([36.4, 127.9], 7);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: "abcd",
+    maxZoom: 19,
+  }).addTo(map);
+
+  function makeIcon(region, isSelected) {
+    const color = LEVEL_COLORS[region.level];
+    const showRing = region.level === "경계" || region.level === "심각";
+    const typeIcon = TYPE_META[region.type] ? TYPE_META[region.type].icon : "✅";
+    return L.divIcon({
+      className: "",
+      html: `
+        <div class="rd-marker-wrap ${isSelected ? "selected" : ""}" style="position:relative;width:26px;height:26px;">
+          ${showRing ? `<div class="rd-marker-ring" style="background:${color};"></div>` : ""}
+          <div class="rd-marker-dot" style="background:${color};box-shadow:0 0 6px ${color};">${typeIcon}</div>
+        </div>
+      `,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+  }
+
+  REGIONS.forEach(region => {
+    const marker = L.marker([region.lat, region.lng], { icon: makeIcon(region, region.id === selectedId) })
+      .addTo(map)
+      .bindPopup(`<strong>${region.name}</strong><br/>${TYPE_META[region.type].icon} ${TYPE_META[region.type].label} · ${LEVEL_LABEL[region.level]}<br/>${region.cond} ${region.temp}°C`);
+    marker.on("click", () => selectRegion(region.id, true));
+    markers[region.id] = marker;
+  });
+
+  function renderDetail(region) {
+    const color = LEVEL_COLORS[region.level];
+    const detailEl = document.getElementById("rd-detail");
+    detailEl.innerHTML = `
+      <div>
+        <div class="rd-detail-label">선택 지역</div>
+        <div class="rd-detail-name-row">
+          <div class="rd-detail-name">${region.name}</div>
+          <div class="rd-level-badge rd-mono" style="color:${color};border:1px solid ${color}55;">${LEVEL_LABEL[region.level]}</div>
+        </div>
+      </div>
+      <div>
+        <div class="rd-row-label">⚠ 재난 유형 · 단계</div>
+        <div class="rd-row-value">
+          <span class="rd-type-badge" style="background:${color}22;color:${color};">${TYPE_META[region.type].icon} ${TYPE_META[region.type].label}</span>
+          <span class="rd-type-badge rd-mono" style="border:1px solid ${color}55;color:${color};margin-left:6px;">${LEVEL_LABEL[region.level]}</span>
+        </div>
+      </div>
+      <div>
+        <div class="rd-row-label">🌤 실시간 기상</div>
+        <div class="rd-row-value">${region.cond} · ${region.temp}°C · 강수확률 ${region.precip}%</div>
+      </div>
+      <div>
+        <div class="rd-row-label">🛡 감염병 특이사항</div>
+        <div class="rd-row-value">${region.epidemic}</div>
+      </div>
+      <div>
+        <div class="rd-row-label">✈ 드론 비행 정보</div>
+        <div class="rd-row-value">${region.drone}</div>
+      </div>
+      <div>
+        <div class="rd-alerts-title">📰 최근 알림</div>
+        <div class="rd-alerts-list">
+          ${region.alerts.map(a => `
+            <div class="rd-alert-item rd-mono" style="display:flex;align-items:center;gap:8px;">
+              <span>${TYPE_META[a.type].icon}</span>
+              <span>${a.time}</span>
+              <span>${a.text}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function selectRegion(id, fly) {
+    const prev = selectedId;
+    selectedId = id;
+    const region = REGIONS.find(r => r.id === id);
+    if (markers[prev]) markers[prev].setIcon(makeIcon(REGIONS.find(r => r.id === prev), false));
+    markers[id].setIcon(makeIcon(region, true));
+    if (fly) {
+      map.flyTo([region.lat, region.lng], Math.max(map.getZoom(), 9), { duration: 0.6 });
+      markers[id].openPopup();
+    }
+    renderDetail(region);
+  }
+
+  renderDetail(REGIONS.find(r => r.id === selectedId));
+
+  // Search
+  const searchInput = document.getElementById("rd-search");
+  const dropdown = document.getElementById("rd-search-dropdown");
+
+  function renderDropdown(matches) {
+    if (!matches.length) { dropdown.style.display = "none"; return; }
+    dropdown.innerHTML = matches.slice(0, 5).map(r => `
+      <div class="rd-search-item" data-id="${r.id}">
+        <span>${TYPE_META[r.type].icon} ${r.name}</span>
+        <span style="color:${LEVEL_COLORS[r.level]};font-size:11px;">${LEVEL_LABEL[r.level]}</span>
+      </div>
+    `).join("");
+    dropdown.style.display = "block";
+    dropdown.querySelectorAll(".rd-search-item").forEach(el => {
+      el.addEventListener("click", () => {
+        selectRegion(el.getAttribute("data-id"), true);
+        searchInput.value = "";
+        dropdown.style.display = "none";
+      });
+    });
+  }
+
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim();
+    if (!q) { dropdown.style.display = "none"; return; }
+    renderDropdown(REGIONS.filter(r => r.name.includes(q)));
+  });
+
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const q = searchInput.value.trim();
+      const match = REGIONS.find(r => r.name.includes(q));
+      if (match) {
+        selectRegion(match.id, true);
+        searchInput.value = "";
+        dropdown.style.display = "none";
+      }
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+})();
+</script>
