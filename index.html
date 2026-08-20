@@ -53,7 +53,10 @@
 
   .rd-main { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); gap: 16px; }
   .rd-map-panel { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
-  .rd-map-caption { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .rd-map-head { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .rd-map-caption { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .rd-sensor-toggle { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: 999px; padding: 6px 11px; font-size: 11px; cursor: pointer; }
+  .rd-sensor-toggle.active { color: #147D64; border-color: #7ED7C0; background: #EAFBF6; }
   #rd-map { height: 540px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
 
   .rd-detail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -61,6 +64,8 @@
   .rd-detail-name-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
   .rd-detail-name { font-size: 20px; font-weight: 700; }
   .rd-level-badge { font-size: 11px; border-radius: 999px; padding: 2px 9px; }
+  .rd-watch-button { margin-top: 9px; border: 1px solid #AFC9F8; color: #2868D7; background: #F2F7FF; border-radius: 7px; padding: 7px 10px; font-size: 11.5px; cursor: pointer; }
+  .rd-watch-button.active { color: #FFFFFF; background: #2868D7; border-color: #2868D7; }
 
   .rd-row-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; }
   .rd-row-value { font-size: 13.5px; color: var(--text); padding-left: 21px; }
@@ -68,6 +73,13 @@
   .rd-alerts-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); margin-bottom: 8px; }
   .rd-alert-item { font-size: 11.5px; color: #334158; background: var(--panel-inner); border: 1px solid #E3E9F1; border-radius: 6px; padding: 7px 10px; }
   .rd-alerts-list { display: flex; flex-direction: column; gap: 7px; }
+  .rd-sensor-card { background: #F0FBF8; border: 1px solid #BDE8DC; border-radius: 9px; padding: 11px; }
+  .rd-sensor-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 700; }
+  .rd-sensor-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; margin-top: 9px; font-size: 11px; color: var(--text-dim); }
+  .rd-sensor-value { display: block; margin-top: 2px; color: var(--text); font-size: 13px; font-weight: 700; }
+  .rd-alert-banner { display: none; margin-bottom: 14px; padding: 11px 14px; border-radius: 9px; border: 1px solid #FFC2C2; background: #FFF2F2; color: #A52C2C; font-size: 12px; }
+  .rd-alert-banner.show { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rd-alert-banner button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 700; }
 
   .rd-ticker { margin-top: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 0; display: flex; align-items: center; overflow: hidden; }
   .rd-ticker-live { display: flex; align-items: center; gap: 6px; padding: 0 14px; flex-shrink: 0; border-right: 1px solid var(--border); }
@@ -128,9 +140,17 @@
     </div>
   </div>
 
+  <div class="rd-alert-banner" id="rd-alert-banner" role="alert">
+    <span id="rd-alert-banner-text"></span>
+    <button type="button" id="rd-alert-banner-close" aria-label="알림 닫기">✕</button>
+  </div>
+
   <div class="rd-main">
     <div class="rd-map-panel">
-      <div class="rd-map-caption">📍 OpenStreetMap 실시간 지도 · 드래그 및 확대·축소 가능 · 마커 클릭 시 상세 확인</div>
+      <div class="rd-map-head">
+        <div class="rd-map-caption">📍 OpenStreetMap 지도 · 재난 및 전국 수위관측소 실데이터</div>
+        <button class="rd-sensor-toggle active" id="rd-sensor-toggle" type="button">💧 수위 센서 불러오는 중</button>
+      </div>
       <div id="rd-map"></div>
     </div>
 
@@ -234,6 +254,34 @@
 
   let selectedId = "seoul";
   const markers = {};
+  const WATCHED_REGIONS_KEY = "disaster-radar-watched-regions";
+  const NOTIFIED_SENSOR_EVENTS_KEY = "disaster-radar-notified-sensor-events";
+  const SENSOR_STATUS_COLORS = {
+    정상: "#20A47A", 관심: "#4C8DFF", 주의: "#E9A800", 경계: "#FF8A3D", 심각: "#FF4D4D", 통신두절: "#98A2B3",
+  };
+  const sensorLayer = L.layerGroup();
+  let sensorStations = [];
+  let sensorsVisible = true;
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+    })[character]);
+  }
+
+  function getStoredSet(key) {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); }
+    catch { return new Set(); }
+  }
+
+  function storeSet(key, set) {
+    localStorage.setItem(key, JSON.stringify([...set]));
+  }
+
+  function formatObservedAt(value) {
+    if (!/^\d{12}$/.test(value || "")) return "수신 정보 없음";
+    return `${value.slice(0,4)}.${value.slice(4,6)}.${value.slice(6,8)} ${value.slice(8,10)}:${value.slice(10,12)}`;
+  }
 
   // Legend
   const legendEl = document.getElementById("rd-legend");
@@ -308,6 +356,92 @@
     markers[region.id] = marker;
   });
 
+  sensorLayer.addTo(map);
+
+  function showAlertBanner(alerts) {
+    const banner = document.getElementById("rd-alert-banner");
+    const text = document.getElementById("rd-alert-banner-text");
+    if (!alerts.length) {
+      banner.classList.remove("show");
+      return;
+    }
+    const first = alerts[0];
+    text.textContent = `⚠ 관심 지역 수위 경고: ${first.name} ${first.waterLevel}m (${first.status})${alerts.length > 1 ? ` 외 ${alerts.length - 1}건` : ""}`;
+    banner.classList.add("show");
+  }
+
+  function checkWatchedRegionAlerts(stations) {
+    const watchedRegions = getStoredSet(WATCHED_REGIONS_KEY);
+    const alertLevels = new Set(["관심", "주의", "경계", "심각"]);
+    const alerts = stations.filter(station => watchedRegions.has(station.regionId) && alertLevels.has(station.status));
+    showAlertBanner(alerts);
+
+    const notifiedEvents = getStoredSet(NOTIFIED_SENSOR_EVENTS_KEY);
+    alerts.forEach(station => {
+      const eventId = `${station.code}:${station.observedAt}:${station.status}`;
+      if (notifiedEvents.has(eventId)) return;
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(`수위 ${station.status} · ${station.name}`, {
+          body: `현재 ${station.waterLevel}m · ${formatObservedAt(station.observedAt)}`,
+          icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2250%22 font-size=%2250%22>💧</text></svg>",
+        });
+      }
+      notifiedEvents.add(eventId);
+    });
+    storeSet(NOTIFIED_SENSOR_EVENTS_KEY, new Set([...notifiedEvents].slice(-300)));
+  }
+
+  function renderWaterSensors(stations) {
+    sensorLayer.clearLayers();
+    stations.forEach(station => {
+      const color = SENSOR_STATUS_COLORS[station.status] || SENSOR_STATUS_COLORS.통신두절;
+      const isAlert = !["정상", "통신두절"].includes(station.status);
+      const marker = L.circleMarker([station.lat, station.lng], {
+        radius: isAlert ? 6 : 3,
+        color: "#FFFFFF",
+        weight: 1,
+        fillColor: color,
+        fillOpacity: station.status === "통신두절" ? 0.45 : 0.82,
+      }).bindTooltip(`${escapeHtml(station.name)} · ${station.waterLevel == null ? "수신 없음" : `${station.waterLevel}m`} · ${escapeHtml(station.status)}`);
+      marker.on("click", () => {
+        selectRegion(station.regionId, false);
+        renderSensorDetail(station);
+      });
+      marker.addTo(sensorLayer);
+    });
+  }
+
+  async function loadWaterSensors() {
+    const toggle = document.getElementById("rd-sensor-toggle");
+    try {
+      const response = await fetch(`data/water-levels.json?t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      sensorStations = Array.isArray(payload.stations) ? payload.stations : [];
+      renderWaterSensors(sensorStations);
+      const activeCount = sensorStations.filter(station => station.waterLevel != null).length;
+      toggle.textContent = `💧 수위 센서 ${activeCount.toLocaleString()}개 · 10분 갱신`;
+      toggle.title = `데이터 생성: ${new Date(payload.generatedAt).toLocaleString("ko-KR")}`;
+      checkWatchedRegionAlerts(sensorStations);
+    } catch (error) {
+      toggle.textContent = "💧 수위 센서 불러오기 실패";
+      toggle.classList.remove("active");
+      console.error("Failed to load water-level sensors", error);
+    }
+  }
+
+  const sensorToggle = document.getElementById("rd-sensor-toggle");
+  sensorToggle.addEventListener("click", () => {
+    sensorsVisible = !sensorsVisible;
+    if (sensorsVisible) sensorLayer.addTo(map);
+    else sensorLayer.removeFrom(map);
+    sensorToggle.classList.toggle("active", sensorsVisible);
+  });
+
+  document.getElementById("rd-alert-banner-close").addEventListener("click", () => {
+    document.getElementById("rd-alert-banner").classList.remove("show");
+  });
+
   function renderDetail(region) {
     const color = LEVEL_COLORS[region.level];
     const detailEl = document.getElementById("rd-detail");
@@ -318,6 +452,7 @@
           <div class="rd-detail-name">${region.name}</div>
           <div class="rd-level-badge rd-mono" style="color:${color};border:1px solid ${color}55;">${LEVEL_LABEL[region.level]}</div>
         </div>
+        <button type="button" class="rd-watch-button" id="rd-watch-button" data-region-id="${region.id}"></button>
       </div>
       <div>
         <div class="rd-row-label">⚠ 재난 유형 · 단계</div>
@@ -338,6 +473,7 @@
         <div class="rd-row-label">✈ 드론 비행 정보</div>
         <div class="rd-row-value">${region.drone}</div>
       </div>
+      <div id="rd-sensor-detail"></div>
       <div>
         <div class="rd-alerts-title">📰 최근 알림</div>
         <div class="rd-alerts-list">
@@ -351,6 +487,52 @@
         </div>
       </div>
     `;
+    bindWatchButton(region);
+  }
+
+  function bindWatchButton(region) {
+    const button = document.getElementById("rd-watch-button");
+    const watchedRegions = getStoredSet(WATCHED_REGIONS_KEY);
+    const render = () => {
+      const active = watchedRegions.has(region.id);
+      button.classList.toggle("active", active);
+      button.textContent = active ? "★ 관심 지역 등록됨 · 해제" : "☆ 관심 지역으로 등록";
+    };
+    render();
+    button.addEventListener("click", async () => {
+      if (watchedRegions.has(region.id)) watchedRegions.delete(region.id);
+      else {
+        watchedRegions.add(region.id);
+        if ("Notification" in window && Notification.permission === "default") {
+          await Notification.requestPermission();
+        }
+      }
+      storeSet(WATCHED_REGIONS_KEY, watchedRegions);
+      render();
+      checkWatchedRegionAlerts(sensorStations);
+    });
+  }
+
+  function renderSensorDetail(station) {
+    const detail = document.getElementById("rd-sensor-detail");
+    if (!detail) return;
+    const color = SENSOR_STATUS_COLORS[station.status] || SENSOR_STATUS_COLORS.통신두절;
+    const thresholds = Object.entries(station.thresholds || {})
+      .filter(([, value]) => value != null)
+      .map(([level, value]) => `${level} ${value}m`).join(" · ") || "공식 기준 미설정";
+    detail.innerHTML = `
+      <div class="rd-sensor-card">
+        <div class="rd-sensor-card-title">
+          <span>💧 ${escapeHtml(station.name)}</span>
+          <span style="color:${color};">${escapeHtml(station.status)}</span>
+        </div>
+        <div class="rd-sensor-grid">
+          <div>현재 수위<span class="rd-sensor-value">${station.waterLevel == null ? "-" : `${station.waterLevel}m`}</span></div>
+          <div>관측 시각<span class="rd-sensor-value">${escapeHtml(formatObservedAt(station.observedAt))}</span></div>
+        </div>
+        <div style="font-size:10.5px;color:var(--text-dim);margin-top:9px;">${escapeHtml(station.address)}</div>
+        <div style="font-size:10.5px;color:var(--text-dim);margin-top:4px;">경보 기준: ${escapeHtml(thresholds)}</div>
+      </div>`;
   }
 
   function selectRegion(id, fly) {
@@ -413,5 +595,8 @@
       dropdown.style.display = "none";
     }
   });
+
+  loadWaterSensors();
+  setInterval(loadWaterSensors, 10 * 60 * 1000);
 })();
 </script>
