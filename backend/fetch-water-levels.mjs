@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT_PATH = resolve(ROOT_DIR, "data", "water-levels.json");
+const HYDROLOGY_OUTPUT_PATH = resolve(ROOT_DIR, "data", "hydrology.json");
 const API_BASE_URL = "https://api.hrfco.go.kr";
 
 const REGION_PREFIXES = [
@@ -58,6 +59,29 @@ function resolveStatus(level, info) {
   return thresholds.find(([threshold]) => threshold != null && level >= threshold)?.[1] ?? "정상";
 }
 
+function resolveFacilityStatus(level, warningLevel, severeLevel) {
+  if (level == null) return "통신두절";
+  if (severeLevel != null && level >= severeLevel) return "심각";
+  if (warningLevel != null && level >= warningLevel) return "기준초과";
+  return "정상";
+}
+
+function baseStation(info, code) {
+  return {
+    code,
+    name: info.obsnm,
+    agency: info.agcnm,
+    address: [info.addr, info.etcaddr].filter(Boolean).join(" ").trim(),
+    regionId: resolveRegionId(info.addr),
+    lat: dmsToDecimal(info.lat),
+    lng: dmsToDecimal(info.lon),
+  };
+}
+
+function validStation(station) {
+  return station.lat != null && station.lng != null && station.regionId != null;
+}
+
 async function requestJson(apiKey, path) {
   const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(apiKey)}/${path}`, {
     headers: { "User-Agent": "disaster-radar/0.1" },
@@ -69,9 +93,15 @@ async function requestJson(apiKey, path) {
 const apiKey = process.env.HRFCO_API_KEY || await readLocalApiKey();
 if (!apiKey) throw new Error("HRFCO_API_KEY is not configured.");
 
-const [infoResponse, levelResponse] = await Promise.all([
+const [infoResponse, levelResponse, rainfallInfo, rainfallData, damInfo, damData, weirInfo, weirData] = await Promise.all([
   requestJson(apiKey, "waterlevel/info.json"),
   requestJson(apiKey, "waterlevel/list/10M.json"),
+  requestJson(apiKey, "rainfall/info.json"),
+  requestJson(apiKey, "rainfall/list/10M.json"),
+  requestJson(apiKey, "dam/info.json"),
+  requestJson(apiKey, "dam/list/10M.json"),
+  requestJson(apiKey, "bo/info.json"),
+  requestJson(apiKey, "bo/list/10M.json"),
 ]);
 
 const levelsByCode = new Map(levelResponse.content.map(item => [item.wlobscd, item]));
@@ -80,13 +110,7 @@ const stations = infoResponse.content
     const measurement = levelsByCode.get(info.wlobscd);
     const waterLevel = numberOrNull(measurement?.wl);
     return {
-      code: info.wlobscd,
-      name: info.obsnm,
-      agency: info.agcnm,
-      address: [info.addr, info.etcaddr].filter(Boolean).join(" ").trim(),
-      regionId: resolveRegionId(info.addr),
-      lat: dmsToDecimal(info.lat),
-      lng: dmsToDecimal(info.lon),
+      ...baseStation(info, info.wlobscd),
       observedAt: measurement?.ymdhm ?? null,
       waterLevel,
       flow: numberOrNull(measurement?.fw),
@@ -99,7 +123,56 @@ const stations = infoResponse.content
       status: resolveStatus(waterLevel, info),
     };
   })
-  .filter(station => station.lat != null && station.lng != null && station.regionId != null);
+  .filter(validStation);
+
+const rainfallByCode = new Map(rainfallData.content.filter(Boolean).map(item => [item.rfobscd, item]));
+const rainfallStations = rainfallInfo.content.filter(Boolean).map(info => {
+  const measurement = rainfallByCode.get(info.rfobscd);
+  return {
+    ...baseStation(info, info.rfobscd),
+    type: "강우",
+    observedAt: measurement?.ymdhm ?? null,
+    rainfall10m: numberOrNull(measurement?.rf),
+    status: measurement?.rf == null ? "통신두절" : "정상",
+  };
+}).filter(validStation);
+
+const damsByCode = new Map(damData.content.filter(Boolean).map(item => [item.dmobscd, item]));
+const damStations = damInfo.content.filter(Boolean).map(info => {
+  const measurement = damsByCode.get(info.dmobscd);
+  const waterLevel = numberOrNull(measurement?.swl);
+  const floodLimit = thresholdOrNull(info.fldlmtwl);
+  const plannedFloodLevel = thresholdOrNull(info.pfh);
+  return {
+    ...baseStation(info, info.dmobscd),
+    type: "댐",
+    observedAt: measurement?.ymdhm ?? null,
+    waterLevel,
+    inflow: numberOrNull(measurement?.inf),
+    discharge: numberOrNull(measurement?.sfw),
+    thresholds: { 제한수위: floodLimit, 계획홍수위: plannedFloodLevel },
+    status: resolveFacilityStatus(waterLevel, floodLimit, plannedFloodLevel),
+  };
+}).filter(validStation);
+
+const weirsByCode = new Map(weirData.content.filter(Boolean).map(item => [item.boobscd, item]));
+const weirStations = weirInfo.content.filter(Boolean).map(info => {
+  const measurement = weirsByCode.get(info.boobscd);
+  const waterLevel = numberOrNull(measurement?.swl);
+  const managementLevel = thresholdOrNull(info.spcwl);
+  const plannedFloodLevel = thresholdOrNull(info.pfh);
+  return {
+    ...baseStation(info, info.boobscd),
+    type: "보",
+    observedAt: measurement?.ymdhm ?? null,
+    waterLevel,
+    downstreamLevel: numberOrNull(measurement?.owl),
+    inflow: numberOrNull(measurement?.inf),
+    discharge: numberOrNull(measurement?.sfw),
+    thresholds: { 관리수위: managementLevel, 계획홍수위: plannedFloodLevel },
+    status: resolveFacilityStatus(waterLevel, managementLevel, plannedFloodLevel),
+  };
+}).filter(validStation);
 
 const payload = {
   generatedAt: new Date().toISOString(),
@@ -109,6 +182,23 @@ const payload = {
   stations,
 };
 
+const hydrologyPayload = {
+  generatedAt: payload.generatedAt,
+  source: payload.source,
+  refreshIntervalMinutes: 10,
+  counts: {
+    rainfall: rainfallStations.length,
+    dams: damStations.length,
+    weirs: weirStations.length,
+  },
+  rainfall: rainfallStations,
+  dams: damStations,
+  weirs: weirStations,
+};
+
 await mkdir(dirname(OUTPUT_PATH), { recursive: true });
-await writeFile(OUTPUT_PATH, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-console.log(`Saved ${stations.length} water-level stations.`);
+await Promise.all([
+  writeFile(OUTPUT_PATH, `${JSON.stringify(payload, null, 2)}\n`, "utf8"),
+  writeFile(HYDROLOGY_OUTPUT_PATH, `${JSON.stringify(hydrologyPayload, null, 2)}\n`, "utf8"),
+]);
+console.log(`Saved ${stations.length} water-level, ${rainfallStations.length} rainfall, ${damStations.length} dam, and ${weirStations.length} weir stations.`);
