@@ -55,8 +55,11 @@
   .rd-map-panel { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
   .rd-map-head { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .rd-map-caption { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .rd-map-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .rd-sensor-toggle { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: 999px; padding: 6px 11px; font-size: 11px; cursor: pointer; }
   .rd-sensor-toggle.active { color: #147D64; border-color: #7ED7C0; background: #EAFBF6; }
+  .rd-radar-toggle { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: 999px; padding: 6px 11px; font-size: 11px; cursor: pointer; }
+  .rd-radar-toggle.active { color: #235DC7; border-color: #AFC9F8; background: #F2F7FF; }
   #rd-map { height: 540px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
 
   .rd-detail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -106,6 +109,11 @@
   .leaflet-popup-content { font-family: inherit; font-size: 12.5px; margin: 10px 12px; }
   .leaflet-container { background: var(--bg); }
   .leaflet-control-zoom a { color: var(--text); }
+  .leaflet-control-layers { color: var(--text); border: 1px solid var(--border); box-shadow: 0 3px 12px rgba(23,32,51,0.12); }
+  .leaflet-control-layers-expanded { padding: 8px 10px; font-family: inherit; font-size: 11px; }
+  .rd-location-popup { min-width: 210px; line-height: 1.55; }
+  .rd-location-popup strong { font-size: 13px; }
+  .rd-location-path { margin-top: 5px; color: var(--text-dim); font-size: 11px; }
 </style>
 
 <div class="rd-root">
@@ -148,8 +156,11 @@
   <div class="rd-main">
     <div class="rd-map-panel">
       <div class="rd-map-head">
-        <div class="rd-map-caption">📍 OpenStreetMap 지도 · 재난 및 전국 수위관측소 실데이터</div>
-        <button class="rd-sensor-toggle active" id="rd-sensor-toggle" type="button">💧 수위 센서 불러오는 중</button>
+        <div class="rd-map-caption">📍 확대 후 지도 클릭 시 읍·면·동 확인 · 일반/위성 지도 전환</div>
+        <div class="rd-map-actions">
+          <button class="rd-radar-toggle" id="rd-radar-toggle" type="button">🌧 강수 레이더 켜기</button>
+          <button class="rd-sensor-toggle active" id="rd-sensor-toggle" type="button">💧 수위 센서 불러오는 중</button>
+        </div>
       </div>
       <div id="rd-map"></div>
     </div>
@@ -166,7 +177,7 @@
     </div>
   </div>
 
-  <div class="rd-footnote">※ 지도는 Leaflet + OpenStreetMap 실시간 타일을 사용합니다. 재난·기상 정보는 현재 목업(mock) 데이터이며, 추후 기상청 API허브 · 공공데이터포털 재난문자 · 질병관리청 감염병포털 · 국토부 브이월드 드론구역 API로 교체 예정입니다.</div>
+  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
 </div>
 
 <script>
@@ -262,6 +273,9 @@
   const sensorLayer = L.layerGroup();
   let sensorStations = [];
   let sensorsVisible = true;
+  let radarLayer = null;
+  let radarVisible = false;
+  const locationCache = new Map();
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>'"]/g, character => ({
@@ -326,10 +340,109 @@
     scrollWheelZoom: true,
     doubleClickZoom: true,
   }).setView([36.4, 127.9], 7);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const streetLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
-  }).addTo(map);
+  });
+  const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    maxZoom: 19,
+  });
+  streetLayer.addTo(map);
+  L.control.layers({
+    "🗺 일반 지도": streetLayer,
+    "🛰 위성 지도": satelliteLayer,
+  }, null, { collapsed: false, position: "topright" }).addTo(map);
+
+  async function loadLatestRadar() {
+    const button = document.getElementById("rd-radar-toggle");
+    try {
+      const response = await fetch("https://api.rainviewer.com/public/weather-maps.json", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const weatherMaps = await response.json();
+      const frames = weatherMaps.radar?.past || [];
+      const latestFrame = frames[frames.length - 1];
+      if (!latestFrame) throw new Error("No radar frame available");
+      if (radarLayer) radarLayer.removeFrom(map);
+      radarLayer = L.tileLayer(`${weatherMaps.host}${latestFrame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+        opacity: 0.68,
+        maxNativeZoom: 7,
+        maxZoom: 19,
+        zIndex: 300,
+        attribution: "Weather radar &copy; RainViewer",
+      });
+      if (radarVisible) radarLayer.addTo(map);
+      const observedAt = new Date(latestFrame.time * 1000).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      button.textContent = radarVisible ? `🌧 강수 레이더 ${observedAt}` : "🌧 강수 레이더 켜기";
+      button.title = `최신 레이더 프레임: ${observedAt}`;
+    } catch (error) {
+      button.textContent = "🌧 강수 레이더 불러오기 실패";
+      button.classList.remove("active");
+      radarVisible = false;
+      console.error("Failed to load precipitation radar", error);
+    }
+  }
+
+  document.getElementById("rd-radar-toggle").addEventListener("click", async () => {
+    radarVisible = !radarVisible;
+    const button = document.getElementById("rd-radar-toggle");
+    button.classList.toggle("active", radarVisible);
+    if (!radarLayer) await loadLatestRadar();
+    else if (radarVisible) radarLayer.addTo(map);
+    else {
+      radarLayer.removeFrom(map);
+      button.textContent = "🌧 강수 레이더 켜기";
+    }
+  });
+
+  function administrativePath(address) {
+    return [...new Set([
+      address.state,
+      address.city || address.county,
+      address.city_district || address.borough,
+      address.town || address.village || address.suburb,
+      address.quarter || address.neighbourhood,
+    ].filter(Boolean))];
+  }
+
+  map.on("click", async event => {
+    if (event.sourceTarget !== map) return;
+    if (map.getZoom() < 11) {
+      L.popup().setLatLng(event.latlng).setContent("<strong>읍·면·동 확인</strong><br>지도를 11단계 이상 확대한 뒤 위치를 눌러주세요.").openOn(map);
+      return;
+    }
+    const cacheKey = `${event.latlng.lat.toFixed(4)},${event.latlng.lng.toFixed(4)}`;
+    const popup = L.popup().setLatLng(event.latlng).setContent("행정구역 확인 중…").openOn(map);
+    try {
+      let place = locationCache.get(cacheKey);
+      if (!place) {
+        const params = new URLSearchParams({
+          format: "jsonv2",
+          lat: event.latlng.lat,
+          lon: event.latlng.lng,
+          zoom: 18,
+          addressdetails: 1,
+          "accept-language": "ko",
+        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        place = await response.json();
+        locationCache.set(cacheKey, place);
+      }
+      const address = place.address || {};
+      const path = administrativePath(address);
+      const locality = address.neighbourhood || address.quarter || address.suburb || address.village || address.town || address.city_district || address.county || "행정동 정보 없음";
+      popup.setContent(`
+        <div class="rd-location-popup">
+          <strong>📍 ${escapeHtml(locality)}</strong>
+          <div class="rd-location-path">${escapeHtml(path.join(" · ") || place.display_name)}</div>
+          <div style="margin-top:5px;font-size:10px;color:var(--text-faint);">위도 ${event.latlng.lat.toFixed(5)} · 경도 ${event.latlng.lng.toFixed(5)}</div>
+        </div>`);
+    } catch (error) {
+      popup.setContent("행정구역 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      console.error("Failed to reverse geocode map location", error);
+    }
+  });
 
   function makeIcon(region, isSelected) {
     const color = LEVEL_COLORS[region.level];
@@ -598,5 +711,7 @@
 
   loadWaterSensors();
   setInterval(loadWaterSensors, 10 * 60 * 1000);
+  loadLatestRadar();
+  setInterval(loadLatestRadar, 5 * 60 * 1000);
 })();
 </script>
