@@ -62,6 +62,7 @@
   .rd-radar-toggle.active { color: #235DC7; border-color: #AFC9F8; background: #F2F7FF; }
   .rd-weather-select { border: 1px solid #AFC9F8; background: #F2F7FF; color: #235DC7; border-radius: 999px; padding: 6px 10px; font-size: 11px; outline: none; cursor: pointer; }
   .rd-weather-status { max-width: 180px; color: var(--text-faint); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rd-source-status { border: 1px solid #C9D8F2; background: #F7FAFF; color: #46658F; border-radius: 999px; padding: 5px 9px; font-size: 10px; white-space: nowrap; }
   #rd-map { height: 540px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
 
   .rd-detail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -170,6 +171,7 @@
             <option value="combined">🌧💨 강수 + 바람</option>
           </select>
           <span class="rd-weather-status" id="rd-weather-status">관측자료 준비 중</span>
+          <span class="rd-source-status" id="rd-aws-status">기상청 AWS 확인 중</span>
           <button class="rd-sensor-toggle active" id="rd-rainfall-toggle" type="button">☔ 강우 센서</button>
           <button class="rd-sensor-toggle active" id="rd-dam-toggle" type="button">🏞 댐</button>
           <button class="rd-sensor-toggle active" id="rd-weir-toggle" type="button">🌉 보</button>
@@ -191,7 +193,7 @@
     </div>
   </div>
 
-  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 바람은 Open-Meteo 모델 기반 현재자료(약 15분 간격)이며 기상청 AWS 실측 연동 전까지 참고용입니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
+  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 기상청 AWS 매분 실측자료는 수집 중이며 지점정보 API 승인 후 바람 지도에 연결됩니다. 현재 바람 화살표는 Open-Meteo 모델 기반 자료입니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
 </div>
 
 <script>
@@ -451,6 +453,22 @@
       windVisible = false;
       document.getElementById("rd-weather-status").textContent = "바람 데이터 수신 실패";
       console.error("Failed to load current wind", error);
+    }
+  }
+
+  async function loadKmaAwsStatus() {
+    const status = document.getElementById("rd-aws-status");
+    try {
+      const response = await fetch(`data/aws-current.json?t=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const validWind = (payload.stations || []).filter(station => station.windSpeed1m != null && station.windDirection1m != null).length;
+      status.textContent = `기상청 AWS ${Number(payload.stationCount || 0).toLocaleString()} · ${formatObservedAt(payload.observedAt).slice(11)}`;
+      status.title = `실측 풍향·풍속 유효 ${validWind.toLocaleString()}개 · 지점정보 API 승인 후 지도 연결`;
+    } catch (error) {
+      status.textContent = "기상청 AWS 수신 실패";
+      status.title = "AWS 실측 JSON을 불러오지 못했습니다.";
+      console.error("Failed to load KMA AWS status", error);
     }
   }
 
@@ -876,5 +894,7 @@
   setInterval(loadLatestRadar, 5 * 60 * 1000);
   loadCurrentWind();
   setInterval(loadCurrentWind, 15 * 60 * 1000);
+  loadKmaAwsStatus();
+  setInterval(loadKmaAwsStatus, 10 * 60 * 1000);
 })();
 </script>
