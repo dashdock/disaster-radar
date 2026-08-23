@@ -60,6 +60,8 @@
   .rd-sensor-toggle.active { color: #147D64; border-color: #7ED7C0; background: #EAFBF6; }
   .rd-radar-toggle { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: 999px; padding: 6px 11px; font-size: 11px; cursor: pointer; }
   .rd-radar-toggle.active { color: #235DC7; border-color: #AFC9F8; background: #F2F7FF; }
+  .rd-weather-select { border: 1px solid #AFC9F8; background: #F2F7FF; color: #235DC7; border-radius: 999px; padding: 6px 10px; font-size: 11px; outline: none; cursor: pointer; }
+  .rd-weather-status { max-width: 180px; color: var(--text-faint); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #rd-map { height: 540px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
 
   .rd-detail-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
@@ -114,6 +116,9 @@
   .rd-location-popup { min-width: 210px; line-height: 1.55; }
   .rd-location-popup strong { font-size: 13px; }
   .rd-location-path { margin-top: 5px; color: var(--text-dim); font-size: 11px; }
+  .rd-wind-marker { width: 42px; padding: 4px 2px; border: 1px solid rgba(35,93,199,0.35); border-radius: 7px; background: rgba(255,255,255,0.9); color: #235DC7; text-align: center; box-shadow: 0 2px 8px rgba(23,32,51,0.12); }
+  .rd-wind-arrow { display: block; font-size: 20px; line-height: 19px; transform-origin: center; }
+  .rd-wind-speed { display: block; color: #334158; font-size: 9px; font-weight: 700; white-space: nowrap; }
 </style>
 
 <div class="rd-root">
@@ -158,7 +163,13 @@
       <div class="rd-map-head">
         <div class="rd-map-caption">📍 확대 후 지도 클릭 시 읍·면·동 확인 · 일반/위성 지도 전환</div>
         <div class="rd-map-actions">
-          <button class="rd-radar-toggle" id="rd-radar-toggle" type="button">🌧 강수 레이더 켜기</button>
+          <select class="rd-weather-select" id="rd-weather-map-select" aria-label="기상지도 선택">
+            <option value="none">🌤 기상지도 없음</option>
+            <option value="radar">🌧 강수 레이더</option>
+            <option value="wind">💨 바람 방향</option>
+            <option value="combined">🌧💨 강수 + 바람</option>
+          </select>
+          <span class="rd-weather-status" id="rd-weather-status">관측자료 준비 중</span>
           <button class="rd-sensor-toggle active" id="rd-rainfall-toggle" type="button">☔ 강우 센서</button>
           <button class="rd-sensor-toggle active" id="rd-dam-toggle" type="button">🏞 댐</button>
           <button class="rd-sensor-toggle active" id="rd-weir-toggle" type="button">🌉 보</button>
@@ -180,7 +191,7 @@
     </div>
   </div>
 
-  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
+  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 바람은 Open-Meteo 모델 기반 현재자료(약 15분 간격)이며 기상청 AWS 실측 연동 전까지 참고용입니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
 </div>
 
 <script>
@@ -282,6 +293,10 @@
   let sensorsVisible = true;
   let radarLayer = null;
   let radarVisible = false;
+  const windLayer = L.layerGroup();
+  let windVisible = false;
+  let radarObservedAt = null;
+  let windObservedAt = null;
   const locationCache = new Map();
 
   function escapeHtml(value) {
@@ -362,7 +377,6 @@
   }, null, { collapsed: false, position: "topright" }).addTo(map);
 
   async function loadLatestRadar() {
-    const button = document.getElementById("rd-radar-toggle");
     try {
       const response = await fetch("https://api.rainviewer.com/public/weather-maps.json", { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -379,27 +393,83 @@
         attribution: "Weather radar &copy; RainViewer",
       });
       if (radarVisible) radarLayer.addTo(map);
-      const observedAt = new Date(latestFrame.time * 1000).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-      button.textContent = radarVisible ? `🌧 강수 레이더 ${observedAt}` : "🌧 강수 레이더 켜기";
-      button.title = `최신 레이더 프레임: ${observedAt}`;
+      radarObservedAt = new Date(latestFrame.time * 1000);
+      updateWeatherStatus();
     } catch (error) {
-      button.textContent = "🌧 강수 레이더 불러오기 실패";
-      button.classList.remove("active");
       radarVisible = false;
+      document.getElementById("rd-weather-status").textContent = "강수 레이더 수신 실패";
       console.error("Failed to load precipitation radar", error);
     }
   }
 
-  document.getElementById("rd-radar-toggle").addEventListener("click", async () => {
-    radarVisible = !radarVisible;
-    const button = document.getElementById("rd-radar-toggle");
-    button.classList.toggle("active", radarVisible);
-    if (!radarLayer) await loadLatestRadar();
-    else if (radarVisible) radarLayer.addTo(map);
-    else {
-      radarLayer.removeFrom(map);
-      button.textContent = "🌧 강수 레이더 켜기";
+  function updateWeatherStatus() {
+    const status = document.getElementById("rd-weather-status");
+    const times = [];
+    if (radarVisible && radarObservedAt) times.push(`레이더 ${radarObservedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`);
+    if (windVisible && windObservedAt) times.push(`바람 ${windObservedAt}`);
+    status.textContent = times.length ? `${times.join(" · ")} 기준` : "기상 레이어를 선택하세요";
+    status.title = "강수 레이더는 약 10분 간격, 바람은 약 15분 간격의 준실시간 자료입니다.";
+  }
+
+  async function loadCurrentWind() {
+    try {
+      const latitudes = REGIONS.map(region => region.lat).join(",");
+      const longitudes = REGIONS.map(region => region.lng).join(",");
+      const params = new URLSearchParams({
+        latitude: latitudes,
+        longitude: longitudes,
+        current: "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+        wind_speed_unit: "ms",
+        timezone: "Asia/Seoul",
+      });
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const locations = Array.isArray(payload) ? payload : [payload];
+      windLayer.clearLayers();
+      locations.forEach((location, index) => {
+        const region = REGIONS[index];
+        const current = location.current || {};
+        const direction = Number(current.wind_direction_10m);
+        const speed = Number(current.wind_speed_10m);
+        if (!region || !Number.isFinite(direction) || !Number.isFinite(speed)) return;
+        const icon = L.divIcon({
+          className: "",
+          html: `<div class="rd-wind-marker" title="${escapeHtml(region.name)} 풍향 ${direction}°">
+            <span class="rd-wind-arrow" style="transform:rotate(${direction + 180}deg);">↑</span>
+            <span class="rd-wind-speed">${speed.toFixed(1)}m/s</span>
+          </div>`,
+          iconSize: [42, 46], iconAnchor: [21, 23],
+        });
+        L.marker([region.lat, region.lng], { icon, zIndexOffset: 700 })
+          .bindTooltip(`${escapeHtml(region.name)} · 풍향 ${direction}° · 풍속 ${speed.toFixed(1)}m/s · 돌풍 ${Number(current.wind_gusts_10m || 0).toFixed(1)}m/s`)
+          .addTo(windLayer);
+      });
+      windObservedAt = locations[0]?.current?.time?.slice(11, 16) || null;
+      updateWeatherStatus();
+    } catch (error) {
+      windVisible = false;
+      document.getElementById("rd-weather-status").textContent = "바람 데이터 수신 실패";
+      console.error("Failed to load current wind", error);
     }
+  }
+
+  async function applyWeatherMapSelection(value) {
+    radarVisible = value === "radar" || value === "combined";
+    windVisible = value === "wind" || value === "combined";
+    if (radarVisible) {
+      if (!radarLayer) await loadLatestRadar();
+      else radarLayer.addTo(map);
+    } else if (radarLayer) radarLayer.removeFrom(map);
+    if (windVisible) {
+      if (!windLayer.getLayers().length) await loadCurrentWind();
+      windLayer.addTo(map);
+    } else windLayer.removeFrom(map);
+    updateWeatherStatus();
+  }
+
+  document.getElementById("rd-weather-map-select").addEventListener("change", event => {
+    applyWeatherMapSelection(event.target.value);
   });
 
   function administrativePath(address) {
@@ -804,5 +874,7 @@
   setInterval(loadHydrologySensors, 10 * 60 * 1000);
   loadLatestRadar();
   setInterval(loadLatestRadar, 5 * 60 * 1000);
+  loadCurrentWind();
+  setInterval(loadCurrentWind, 15 * 60 * 1000);
 })();
 </script>
