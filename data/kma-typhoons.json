@@ -1,0 +1,8 @@
+{
+  "generatedAt": "2026-08-24T04:49:37.509Z",
+  "source": "기상청 API허브 태풍정보 및 예측",
+  "sourceTimeZone": "UTC",
+  "refreshSchedule": "기상청 정규 발표(04·10·16·22 KST) 이후 및 수시",
+  "activeCount": 0,
+  "typhoons": []
+}
