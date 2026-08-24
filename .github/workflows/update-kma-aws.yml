@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: AWS 매분자료 수집
+      - name: AWS 매분자료와 지점정보 수집
         env:
           KMA_API_KEY: ${{ secrets.KMA_API_KEY }}
         run: node backend/fetch-kma-aws.mjs
