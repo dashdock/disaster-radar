@@ -4,12 +4,19 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="내 위치의 기상·재난 위험과 행동요령을 한눈에 확인하는 재난레이더">
   <title>재난레이더 | 내 위치 안전 요약</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><link rel="stylesheet" href="./assets/app.css"><link rel="stylesheet" href="./assets/levels.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><link rel="stylesheet" href="./assets/app.css"><link rel="stylesheet" href="./assets/levels.css"><link rel="stylesheet" href="./assets/region-selector.css">
 </head>
 <body>
   <header id="site-header"></header>
   <main class="page-shell home-page">
-    <section class="location-bar"><div><span class="eyebrow">내 위치 안전 브리핑</span><h1 id="location-name">현재 위치를 확인하고 있습니다</h1><p id="location-note">위치 권한을 허용하면 읍·면·동 기준으로 알려드립니다.</p></div><button class="button secondary" id="locate-button" type="button">내 위치 다시 찾기</button></section>
+    <section class="location-bar"><div><span class="eyebrow">내 위치 안전 브리핑</span><h1 id="location-name">현재 위치를 확인하고 있습니다</h1><p id="location-note">위치 권한을 허용하거나 아래에서 지역을 직접 선택하세요.</p></div><button class="button secondary" id="locate-button" type="button">내 위치 다시 찾기</button></section>
+    <form class="region-selector" id="region-selector">
+      <label><span>시·도</span><select id="region-sido" required><option value="">시·도 선택</option></select></label>
+      <label><span>시·군·구</span><input id="region-sigungu" placeholder="예: 종로구"></label>
+      <label><span>읍·면·동</span><input id="region-dong" placeholder="예: 청운효자동"></label>
+      <button class="button" type="submit">이 지역으로 조회</button>
+      <p class="region-error" id="region-error" role="alert"></p>
+    </form>
     <section class="safety-banner normal" id="safety-banner" aria-live="polite"><div class="signal" id="safety-signal">●</div><div class="safety-copy"><span class="status-pill" id="safety-grade">판정 중</span><h2 id="safety-title">지역 안전정보를 모으고 있습니다</h2><p id="safety-message">기상과 주변 위험정보를 확인하는 중입니다.</p></div><a class="button ghost" href="./alerts/">알림 설정</a></section>
     <section><div class="section-heading"><div><span class="eyebrow">지금 알아야 할 것</span><h2>핵심 정보</h2></div><span class="updated-at" id="updated-at">갱신 중</span></div><div class="core-grid">
       <a class="metric-card" href="./warnings/"><span class="metric-icon">⚠️</span><span class="metric-label">공식 특보</span><strong id="warning-value">확인 중</strong><small id="warning-meta">기상청 특보 연동상태 확인</small></a>
