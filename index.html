@@ -494,7 +494,10 @@
       const params = new URLSearchParams({
         latitude: homeLocation.lat,
         longitude: homeLocation.lng,
-        current: "temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m",
+        current: "temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m",
+        hourly: "precipitation_probability,precipitation,rain",
+        daily: "precipitation_probability_max,precipitation_sum,rain_sum",
+        forecast_days: "2",
         wind_speed_unit: "ms",
         timezone: "Asia/Seoul",
       });
@@ -502,17 +505,41 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       const current = payload.current || {};
+      const hourlyTimes = payload.hourly?.time || [];
+      const firstForecastIndex = Math.max(0, hourlyTimes.findIndex(time => time >= current.time));
+      const forecastWindow = hours => {
+        const probabilities = (payload.hourly?.precipitation_probability || []).slice(firstForecastIndex, firstForecastIndex + hours).map(Number).filter(Number.isFinite);
+        const amounts = (payload.hourly?.precipitation || []).slice(firstForecastIndex, firstForecastIndex + hours).map(Number).filter(Number.isFinite);
+        return {
+          probability: probabilities.length ? Math.max(...probabilities) : null,
+          amount: amounts.reduce((sum, value) => sum + value, 0),
+        };
+      };
+      const next6h = forecastWindow(6);
+      const next12h = forecastWindow(12);
+      const todayProbability = Number(payload.daily?.precipitation_probability_max?.[0]);
+      const todayAmount = Number(payload.daily?.precipitation_sum?.[0]);
       card.innerHTML = `
-        <div class="rd-home-card-head"><span class="rd-home-card-title">🌤 현재 기상</span><span class="rd-home-card-source">Open-Meteo · 모델 기반</span></div>
+        <div class="rd-home-card-head"><span class="rd-home-card-title">🌤 현재 기상</span><span class="rd-home-card-source">현재 위치 기준</span></div>
         <div class="rd-home-primary">${Number(current.temperature_2m).toFixed(1)}°</div>
         <div class="rd-home-description">${escapeHtml(weatherCodeLabel(current.weather_code))} · ${escapeHtml(homeLocation.label)}</div>
         <div class="rd-home-metrics">
           <div class="rd-home-metric">체감<strong>${Number(current.apparent_temperature).toFixed(1)}°</strong></div>
-          <div class="rd-home-metric">강수<strong>${Number(current.precipitation || 0).toFixed(1)}mm</strong></div>
+          <div class="rd-home-metric">습도<strong>${Number(current.relative_humidity_2m).toFixed(0)}%</strong></div>
           <div class="rd-home-metric">바람<strong>${Number(current.wind_speed_10m).toFixed(1)}m/s</strong></div>
+        </div>`;
+      document.getElementById("rd-home-sensors").innerHTML = `
+        <div class="rd-home-card-head"><span class="rd-home-card-title">☔ 강수 전망</span><span class="rd-home-card-source">시간별 예보</span></div>
+        <div class="rd-home-primary">${Number.isFinite(next6h.probability) ? `${next6h.probability.toFixed(0)}%` : "-"}</div>
+        <div class="rd-home-description">앞으로 6시간 최대 강수확률 · 예상 강수량 ${next6h.amount.toFixed(1)}mm</div>
+        <div class="rd-home-metrics">
+          <div class="rd-home-metric">6시간<strong>${next6h.amount.toFixed(1)}mm</strong></div>
+          <div class="rd-home-metric">12시간<strong>${next12h.probability?.toFixed(0) ?? "-"}% · ${next12h.amount.toFixed(1)}mm</strong></div>
+          <div class="rd-home-metric">오늘<strong>${Number.isFinite(todayProbability) ? todayProbability.toFixed(0) : "-"}% · ${Number.isFinite(todayAmount) ? todayAmount.toFixed(1) : "-"}mm</strong></div>
         </div>`;
     } catch (error) {
       card.innerHTML = '<div class="rd-home-card-head"><span class="rd-home-card-title">🌤 현재 기상</span></div><div class="rd-empty-state">기상 정보를 불러오지 못했습니다.</div>';
+      document.getElementById("rd-home-sensors").innerHTML = '<div class="rd-home-card-head"><span class="rd-home-card-title">☔ 강수 전망</span></div><div class="rd-empty-state">강수 예보를 불러오지 못했습니다.</div>';
       console.error("Failed to load home weather", error);
     }
   }
@@ -522,16 +549,6 @@
     const nearby = allSensors.map(sensor => ({ ...sensor, distance: distanceKm(homeLocation.lat, homeLocation.lng, sensor.lat, sensor.lng) }))
       .filter(sensor => sensor.distance <= 30).sort((a, b) => a.distance - b.distance);
     const alerts = nearby.filter(sensor => ["관심", "주의", "경계", "심각", "기준초과"].includes(sensor.status));
-    const nearest = nearby[0];
-    document.getElementById("rd-home-sensors").innerHTML = `
-      <div class="rd-home-card-head"><span class="rd-home-card-title">📡 주변 30km 센서</span><span class="rd-home-card-source">공식 수문 관측</span></div>
-      <div class="rd-home-primary">${nearby.length.toLocaleString()}개</div>
-      <div class="rd-home-description">${nearest ? `가장 가까운 센서: ${escapeHtml(nearest.name)} · ${nearest.distance.toFixed(1)}km` : "주변 관측소를 확인 중입니다."}</div>
-      <div class="rd-home-metrics">
-        <div class="rd-home-metric">수위<strong>${nearby.filter(item => !item.type).length}</strong></div>
-        <div class="rd-home-metric">강우<strong>${nearby.filter(item => item.type === "강우").length}</strong></div>
-        <div class="rd-home-metric">댐·보<strong>${nearby.filter(item => ["댐","보"].includes(item.type)).length}</strong></div>
-      </div>`;
     document.getElementById("rd-home-alerts").innerHTML = `
       <div class="rd-home-card-head"><span class="rd-home-card-title">⚠ 주변 센서 경고</span><span class="rd-home-card-source">공식 기준 비교</span></div>
       <div class="rd-home-primary" style="color:${alerts.length ? "#D83939" : "#20A47A"};">${alerts.length}건</div>
@@ -540,10 +557,10 @@
 
   function renderCctvCard() {
     document.getElementById("rd-home-cctv").innerHTML = `
-      <div class="rd-home-card-head"><span class="rd-home-card-title">📹 인근 CCTV</span><span class="rd-home-card-source">ITS 연동 준비</span></div>
-      <div class="rd-home-primary" style="font-size:20px;">API 키 필요</div>
-      <div class="rd-home-description">현재 위치 주변 CCTV를 거리순으로 표시할 준비가 되어 있습니다. ITS 인증키가 등록되면 영상 URL과 촬영 방향을 연결합니다.</div>
-      <a class="rd-cctv-link" href="https://openapi.its.go.kr/" target="_blank" rel="noopener">ITS OpenAPI 신청하기 →</a>`;
+      <div class="rd-home-card-head"><span class="rd-home-card-title">📹 인근 도로 CCTV</span><span class="rd-home-card-source">국가교통정보센터 연동 대기</span></div>
+      <div class="rd-home-primary" style="font-size:20px;">공공데이터 키 필요</div>
+      <div class="rd-home-description">국토교통부 CCTV 화상자료 API를 신청하면 현재 위치 주변 카메라를 거리순으로 찾고 실시간 영상 URL을 재생할 수 있습니다. 방범 CCTV는 위치만 공개되는 경우가 많아 영상 재생 대상이 아닙니다.</div>
+      <a class="rd-cctv-link" href="https://www.data.go.kr/data/15040466/openapi.do" target="_blank" rel="noopener">CCTV 화상자료 활용신청 →</a>`;
   }
 
   async function setHomeLocation(lat, lng, fallbackLabel = "선택 위치") {
