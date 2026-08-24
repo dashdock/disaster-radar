@@ -1,5 +1,5 @@
 export const categories = [
-  {slug:"warnings",icon:"⚠️",title:"기상특보",description:"주의보·경보와 발효구역",status:"required",label:"API 필요"},
+  {slug:"warnings",icon:"⚠️",title:"기상특보",description:"주의보·경보와 발효구역",status:"connected",label:"연동됨"},
   {slug:"forecast",icon:"☔",title:"강수·기온 예보",description:"시간별 강수확률과 예상량",status:"connected",label:"연동됨"},
   {slug:"observations",icon:"🌡️",title:"AWS 실관측",description:"관측소별 기온·강수·바람",status:"connected",label:"연동됨"},
   {slug:"radar",icon:"📡",title:"기상레이더",description:"비구름 위치와 이동",status:"connected",label:"연동됨"},

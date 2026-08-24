@@ -1,0 +1,35 @@
+name: 기상청 현재 특보 갱신
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "4,14,24,34,44,54 * * * *"
+permissions:
+  contents: write
+concurrency:
+  group: update-kma-warnings
+  cancel-in-progress: true
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 현재 기상특보 수집
+        env:
+          KMA_API_KEY: ${{ secrets.KMA_API_KEY }}
+        run: node backend/fetch-kma-warnings.mjs
+      - name: 변경 데이터 커밋
+        run: |
+          git config user.name "disaster-radar-bot"
+          git config user.email "disaster-radar-bot@users.noreply.github.com"
+          git add data/kma-warnings.json
+          if git diff --cached --quiet; then
+            echo "변경된 특보자료가 없습니다."
+          else
+            git commit -m "[수정] 기상청 현재 특보 데이터 갱신"
+            git push
+          fi
