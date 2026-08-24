@@ -1,0 +1,28 @@
+import{categories,renderShell,rootPath,escapeHtml,formatObservedAt}from"./common.js";
+const slug=document.body.dataset.category,root=rootPath(),category=categories.find(c=>c.slug===slug);renderShell(slug);
+const configs={
+ warnings:{summary:"현재 위치에 발효된 기상 주의보·경보를 확인합니다.",visual:"기상특보 API가 연결되면 발효구역 지도가 표시됩니다.",action:"특보가 발효되면 기상청과 지자체의 행동요령을 우선 따르세요."},
+ forecast:{summary:"시간별 강수확률, 예상 강수량과 기온 변화를 확인합니다.",visual:"현재 위치를 허용하면 위치 기반 48시간 예보를 표시합니다.",action:"강수확률뿐 아니라 예상 강수량과 레이더를 함께 확인하세요."},
+ observations:{summary:"기상청 AWS 관측소의 실제 기온·강수·바람 자료입니다.",visual:"전국 AWS 관측소의 최신 매분자료를 표시합니다.",action:"강풍이나 집중호우 관측 시 야외활동을 줄이세요."},
+ radar:{summary:"최근 강수 레이더로 비구름 위치와 이동을 확인합니다.",visual:"RainViewer 최신 관측 타일을 지도 위에 겹쳐 표시합니다.",action:"강한 강수대가 접근하면 저지대와 하천 주변을 피하세요."},
+ rivers:{summary:"공식 하천 관측소 수위와 위험단계를 확인합니다.",visual:"수위 관측지점을 상태 색상으로 지도에 표시합니다.",action:"주의 이상 단계에서는 하천 산책로에 접근하지 마세요."},
+ dams:{summary:"댐과 보의 수위·유입량·방류량을 확인합니다.",visual:"현재 확보된 댐·보 관측자료를 함께 표시합니다.",action:"방류 안내가 있으면 하류 하천변에서 즉시 벗어나세요."},
+ roads:{summary:"도로 통제와 주변 교통 CCTV 영상을 확인하는 화면입니다.",visual:"국토교통부 CCTV 화상자료 API 키 등록 후 영상이 표시됩니다.",action:"침수·통제구간을 피하고 출발 전 우회경로를 확인하세요."},
+ land:{summary:"산사태 위험과 주변 산불 발생상황을 확인합니다.",visual:"산사태·산불 API 활용신청 후 위험지도가 표시됩니다.",action:"경보 시 산행을 취소하고 산지에서 벗어나세요."},
+ air:{summary:"미세먼지·초미세먼지·오존 등 대기질을 확인합니다.",visual:"에어코리아 API 키 등록 후 측정소별 등급이 표시됩니다.",action:"나쁨 이상이면 야외활동을 줄이고 마스크를 착용하세요."},
+ health:{summary:"감염병 위기단계와 지역별 주의정보를 확인합니다.",visual:"신뢰할 수 있는 정기 수집원을 선정하기 전까지 판정에서 제외합니다.",action:"질병관리청의 공식 예방수칙을 확인하세요."},
+ drone:{summary:"드론 비행금지·제한구역과 기상 위험을 확인합니다.",visual:"공역 공간정보 API 연결 후 지도에 제한구역이 표시됩니다.",action:"제한공역에서는 승인 없이 비행하지 마세요."},
+ alerts:{summary:"관심지역과 위험 알림 조건을 관리합니다.",visual:"브라우저 알림 권한과 저장된 관심지역을 확인합니다.",action:"중요 지역을 등록하고 브라우저 알림을 허용하세요."}
+};
+const c=configs[slug];document.title=`${category.title} | 재난레이더`;document.getElementById("detail-title").textContent=category.title;document.getElementById("detail-icon").textContent=category.icon;document.getElementById("detail-summary").textContent=c.summary;const badge=document.getElementById("integration-status");badge.textContent=category.label;badge.className=`source-badge ${category.status}`;badge.style.position="static";document.getElementById("visual-note").textContent=c.visual;document.getElementById("detail-action").textContent=c.action;
+async function json(path){const url=/^https?:/.test(path)?path:`${root}/${path}`;const r=await fetch(`${url}${url.includes("?")?"&":"?"}t=${Date.now()}`,{cache:"no-store"});if(!r.ok)throw Error(r.status);return r.json()}
+function rowsHtml(headers,rows){return`<table class="data-table"><thead><tr>${headers.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(x=>`<td>${escapeHtml(x)}</td>`).join("")}</tr>`).join("")}</tbody></table>`}
+async function renderData(){const target=document.getElementById("data-content"),mapTarget=document.getElementById("detail-map");try{
+ if(slug==="observations"){const d=await json("data/aws-current.json"),rows=(d.stations||[]).slice(0,100).map(s=>[s.stationName||s.stationCode,`${s.temperature??"-"}℃`,`${s.windSpeed1m??"-"}m/s`,`${s.rainfall60m??"-"}mm`,formatObservedAt(s.observedAt)]);target.innerHTML=rowsHtml(["관측소","기온","풍속","1시간 강수","관측시각"],rows);document.getElementById("visual-note").textContent=`${d.locatedStationCount||d.stationCount}개 관측소 · ${formatObservedAt(d.observedAt)} 기준`}
+ else if(slug==="rivers"){const d=await json("data/water-levels.json"),rows=(d.stations||[]).slice(0,100).map(s=>[s.name,s.waterLevel==null?"-":`${s.waterLevel}m`,s.status,s.address||"-",formatObservedAt(s.observedAt)]);target.innerHTML=rowsHtml(["관측소","현재 수위","단계","주소","관측시각"],rows)}
+ else if(slug==="dams"){const d=await json("data/hydrology.json"),items=[...(d.dams||[]),...(d.weirs||[])],rows=items.map(s=>[s.type,s.name,s.waterLevel==null?"-":`${s.waterLevel}m`,s.inflow??"-",s.discharge??"-",s.status]);target.innerHTML=rowsHtml(["구분","시설","수위","유입량","방류량","상태"],rows)}
+ else if(slug==="forecast"){const p=new URLSearchParams({latitude:37.5665,longitude:126.978,hourly:"temperature_2m,precipitation_probability,precipitation,wind_speed_10m",forecast_days:2,wind_speed_unit:"ms",timezone:"Asia/Seoul"}),d=await json(`https://api.open-meteo.com/v1/forecast?${p}`),rows=d.hourly.time.slice(0,24).map((t,i)=>[t.replace("T"," "),`${d.hourly.temperature_2m[i]}℃`,`${d.hourly.precipitation_probability[i]}%`,`${d.hourly.precipitation[i]}mm`,`${d.hourly.wind_speed_10m[i]}m/s`]);target.innerHTML=rowsHtml(["시각","기온","강수확률","예상강수","바람"],rows)}
+ else{target.innerHTML=`<div class="empty">${category.label}. API가 연결되기 전에는 임의 데이터를 표시하지 않습니다.</div>`}
+ if(["radar","rivers","dams","observations"].includes(slug)&&window.L){const map=L.map(mapTarget).setView([36.4,127.9],7);L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OpenStreetMap'}).addTo(map);if(slug==="radar"){const d=await json("https://api.rainviewer.com/public/weather-maps.json"),f=d.radar?.past?.at(-1);if(f)L.tileLayer(`${d.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:.7,maxNativeZoom:7}).addTo(map)}}else mapTarget.innerHTML=`<div class="empty">${escapeHtml(c.visual)}</div>`
+ }catch(e){console.error(e);target.innerHTML='<div class="empty">데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'}}
+renderData();
