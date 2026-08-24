@@ -1,4 +1,5 @@
 import{renderShell,renderCategoryGrid,distanceKm,escapeHtml,weatherMeta,formatObservedAt}from"./common.js";
+import{installMapLayers}from"./map-layers.js";
 renderShell("home");renderCategoryGrid(document.getElementById("category-grid"),".");
 
 let locationState={lat:37.5665,lng:126.978,label:"서울특별시 중구",source:"기본 위치"};
@@ -11,7 +12,7 @@ function max(values){const valid=values.map(Number).filter(Number.isFinite);retu
 function sum(values){return values.map(Number).filter(Number.isFinite).reduce((a,b)=>a+b,0)}
 function windDirection(degree){return["북","북동","동","남동","남","남서","서","북서"][Math.round(Number(degree)/45)%8]||"-"}
 
-function initMap(){map=L.map("home-map",{zoomControl:true}).setView([locationState.lat,locationState.lng],12);L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);hazardLayer=L.layerGroup().addTo(map);userMarker=L.circleMarker([locationState.lat,locationState.lng],{radius:8,color:"#fff",weight:3,fillColor:"#2563eb",fillOpacity:1}).addTo(map).bindTooltip("선택 위치")}
+function initMap(){map=L.map("home-map",{zoomControl:true}).setView([locationState.lat,locationState.lng],12);installMapLayers(map,".");hazardLayer=L.layerGroup().addTo(map);userMarker=L.circleMarker([locationState.lat,locationState.lng],{radius:8,color:"#fff",weight:3,fillColor:"#2563eb",fillOpacity:1}).addTo(map).bindTooltip("선택 위치")}
 function setMapLocation(){map.setView([locationState.lat,locationState.lng],12);userMarker.setLatLng([locationState.lat,locationState.lng])}
 
 async function resolveLocation(lat,lng){try{const p=new URLSearchParams({format:"jsonv2",lat,lon:lng,zoom:18,addressdetails:1,"accept-language":"ko"});const d=await json(`https://nominatim.openstreetmap.org/reverse?${p}`),a=d.address||{};return[a.city||a.county||a.state,a.neighbourhood||a.quarter||a.suburb||a.village||a.town||a.city_district].filter(Boolean).join(" ")||d.display_name}catch{return"선택한 위치"}}

@@ -1,5 +1,6 @@
 import{categories,renderShell,rootPath,escapeHtml,formatObservedAt}from"./common.js";
-const slug=document.body.dataset.category,root=rootPath(),category=categories.find(c=>c.slug===slug);renderShell(slug);
+import{installMapLayers}from"./map-layers.js";
+const slug=document.body.dataset.category,root=rootPath(),category=categories.find(c=>c.slug===slug),mapCss=document.createElement("link");mapCss.rel="stylesheet";mapCss.href=`${root}/assets/map-layers.css`;document.head.appendChild(mapCss);renderShell(slug);
 const configs={
  warnings:{summary:"현재 위치에 발효된 기상 주의보·경보를 확인합니다.",visual:"기상특보 API가 연결되면 발효구역 지도가 표시됩니다.",action:"특보가 발효되면 기상청과 지자체의 행동요령을 우선 따르세요."},
  forecast:{summary:"시간별 강수확률, 예상 강수량과 기온 변화를 확인합니다.",visual:"현재 위치를 허용하면 위치 기반 48시간 예보를 표시합니다.",action:"강수확률뿐 아니라 예상 강수량과 레이더를 함께 확인하세요."},
@@ -24,6 +25,6 @@ async function renderData(){const target=document.getElementById("data-content")
  else if(slug==="dams"){const d=await json("data/hydrology.json"),items=[...(d.dams||[]),...(d.weirs||[])],rows=items.map(s=>[s.type,s.name,s.waterLevel==null?"-":`${s.waterLevel}m`,s.inflow??"-",s.discharge??"-",s.status]);target.innerHTML=rowsHtml(["구분","시설","수위","유입량","방류량","상태"],rows)}
  else if(slug==="forecast"){const p=new URLSearchParams({latitude:37.5665,longitude:126.978,hourly:"temperature_2m,precipitation_probability,precipitation,wind_speed_10m",forecast_days:2,wind_speed_unit:"ms",timezone:"Asia/Seoul"}),d=await json(`https://api.open-meteo.com/v1/forecast?${p}`),rows=d.hourly.time.slice(0,24).map((t,i)=>[t.replace("T"," "),`${d.hourly.temperature_2m[i]}℃`,`${d.hourly.precipitation_probability[i]}%`,`${d.hourly.precipitation[i]}mm`,`${d.hourly.wind_speed_10m[i]}m/s`]);target.innerHTML=rowsHtml(["시각","기온","강수확률","예상강수","바람"],rows)}
  else{target.innerHTML=`<div class="empty">${category.label}. API가 연결되기 전에는 임의 데이터를 표시하지 않습니다.</div>`}
- if(["radar","rivers","dams","observations"].includes(slug)&&window.L){const map=L.map(mapTarget).setView([36.4,127.9],7);L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OpenStreetMap'}).addTo(map);if(slug==="radar"){const d=await json("https://api.rainviewer.com/public/weather-maps.json"),f=d.radar?.past?.at(-1);if(f)L.tileLayer(`${d.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:.7,maxNativeZoom:7}).addTo(map)}}else mapTarget.innerHTML=`<div class="empty">${escapeHtml(c.visual)}</div>`
+ if(["radar","rivers","dams","observations"].includes(slug)&&window.L){const map=L.map(mapTarget).setView([36.4,127.9],7),layers=installMapLayers(map,root);if(slug==="radar")layers.radar.addTo(map)}else mapTarget.innerHTML=`<div class="empty">${escapeHtml(c.visual)}</div>`
  }catch(e){console.error(e);target.innerHTML='<div class="empty">데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>'}}
 renderData();
