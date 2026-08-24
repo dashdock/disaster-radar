@@ -5,7 +5,7 @@ export const categories = [
   {slug:"radar",icon:"📡",title:"기상레이더",description:"비구름 위치와 이동",status:"connected",label:"연동됨"},
   {slug:"rivers",icon:"🌊",title:"하천 수위",description:"수위와 공식 위험단계",status:"connected",label:"연동됨"},
   {slug:"dams",icon:"🏞️",title:"댐·보",description:"수위·유입량·방류량",status:"partial",label:"일부 연동"},
-  {slug:"roads",icon:"📹",title:"도로·CCTV",description:"통제구간과 현장 영상",status:"required",label:"API 필요"},
+  {slug:"roads",icon:"📹",title:"도로·CCTV",description:"통제구간과 현장 영상",status:"partial",label:"일부 연동"},
   {slug:"land",icon:"⛰️",title:"산사태·산불",description:"산지 위험과 산불 현황",status:"required",label:"API 필요"},
   {slug:"air",icon:"😷",title:"대기질",description:"미세먼지·오존 등급",status:"required",label:"API 필요"},
   {slug:"health",icon:"🛡️",title:"감염병",description:"위기단계와 지역 주의정보",status:"mock",label:"정보 없음"},

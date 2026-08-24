@@ -1,0 +1,15 @@
+import{mkdir,readFile,writeFile}from"node:fs/promises";
+import{dirname,resolve}from"node:path";
+import{fileURLToPath}from"node:url";
+const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),".."),OUTPUT=resolve(ROOT,"data","cctv-metadata.json"),API="https://openapi.its.go.kr:9443/cctvInfo";
+async function localKey(){try{const text=await readFile(resolve(ROOT,".env"),"utf8");return text.split(/\r?\n/).find(x=>x.startsWith("ITS_API_KEY="))?.slice("ITS_API_KEY=".length).trim()}catch{return undefined}}
+function decode(value){return String(value||"").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim().replace(/;+$/g,"")}
+function tag(block,name){return decode(block.match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`))?.[1])}
+function parse(xml){return[...xml.matchAll(/<data>([\s\S]*?)<\/data>/g)].map(match=>{const block=match[1],latitude=Number.parseFloat(tag(block,"coordy")),longitude=Number.parseFloat(tag(block,"coordx")),url=tag(block,"cctvurl");if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!url)return null;return{roadSectionId:tag(block,"roadsectionid")||null,name:tag(block,"cctvname")||"이름 없는 CCTV",latitude,longitude,type:tag(block,"cctvtype")||null,format:tag(block,"cctvformat")||null,resolution:tag(block,"cctvresolution")||null,fileCreatedAt:tag(block,"filecreatetime")||null,streamAvailable:true}}).filter(Boolean)}
+async function fetchTile(key,bounds){const params=new URLSearchParams({apiKey:key,type:"all",cctvType:"1",minX:String(bounds.minX),maxX:String(bounds.maxX),minY:String(bounds.minY),maxY:String(bounds.maxY),getType:"xml"}),response=await fetch(`${API}?${params}`,{headers:{"User-Agent":"disaster-radar/0.7"}});if(!response.ok)throw Error(`ITS CCTV API failed: HTTP ${response.status}`);return parse(await response.text())}
+async function parallel(items,limit,work){const result=[];let cursor=0;async function worker(){while(cursor<items.length){const index=cursor++;result.push(...await work(items[index]))}}await Promise.all(Array.from({length:limit},worker));return result}
+const key=process.env.ITS_API_KEY||await localKey();if(!key)throw Error("ITS_API_KEY is not configured.");
+const tiles=[];for(let minY=32;minY<40;minY+=2)for(let minX=124;minX<132;minX+=2)tiles.push({minX,maxX:minX+2,minY,maxY:minY+2});
+const collected=await parallel(tiles,4,tile=>fetchTile(key,tile)),unique=new Map();for(const camera of collected){if(camera.latitude<32||camera.latitude>40||camera.longitude<124||camera.longitude>132)continue;unique.set(`${camera.name}:${camera.latitude.toFixed(6)}:${camera.longitude.toFixed(6)}`,camera)}
+const cameras=[...unique.values()].sort((a,b)=>a.latitude-b.latitude||a.longitude-b.longitude),payload={generatedAt:new Date().toISOString(),source:"국토교통부 국가교통정보센터 CCTV 화상자료",refreshIntervalMinutes:1440,count:cameras.length,cameras};
+await mkdir(dirname(OUTPUT),{recursive:true});await writeFile(OUTPUT,`${JSON.stringify(payload,null,2)}\n`,"utf8");console.log(`Saved ${cameras.length} ITS CCTV metadata rows without stream tokens.`);
