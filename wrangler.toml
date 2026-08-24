@@ -1,0 +1,6 @@
+name = "disaster-radar-cctv"
+main = "worker/cctv-proxy.js"
+compatibility_date = "2026-08-24"
+
+[observability]
+enabled = true
