@@ -1,0 +1,22 @@
+{
+  "title": "국가위기경보 4단계",
+  "basis": "재난 및 안전관리 기본법 제38조",
+  "basisUrl": "https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1031355547",
+  "stages": [
+    { "code": "interest", "name": "관심", "color": "파랑", "description": "위기징후를 감시하고 관련 정보를 수집하는 단계" },
+    { "code": "caution", "name": "주의", "color": "노랑", "description": "위기 가능성이 높아져 대응 태세를 점검하는 단계" },
+    { "code": "alert", "name": "경계", "color": "주황", "description": "위기가 확대될 가능성에 대비해 대응조치를 강화하는 단계" },
+    { "code": "severe", "name": "심각", "color": "빨강", "description": "피해가 중대하거나 확대 가능성이 높아 총력 대응하는 단계" }
+  ],
+  "dataAxes": [
+    { "name": "공식 국가위기경보", "authority": "재난관리주관기관", "usage": "공식 발령자료가 있을 때만 그대로 표시" },
+    { "name": "공식 기상특보", "authority": "기상청", "usage": "주의보·경보와 특보 종류를 별도 표시" },
+    { "name": "서비스 종합판정", "authority": "재난레이더 규칙엔진", "usage": "공개 관측자료로 계산한 참고 단계이며 공식 경보가 아님" }
+  ],
+  "typeCriteria": [
+    { "type": "태풍", "advisory": "강풍·풍랑 특보 기준 도달 예상", "warning": "강풍·풍랑 경보기준, 총강우량 200mm 이상 또는 폭풍해일 경보기준 도달 예상", "usage": "기준 설명용·공식 기상특보 수신값 우선" },
+    { "type": "하천 홍수", "advisory": "계획홍수량의 50%에 해당하는 수위", "warning": "계획홍수량의 70%에 해당하는 수위", "usage": "관할 홍수통제소의 공식 수위표·발표값 우선" },
+    { "type": "자연재난 전반", "advisory": "중앙재난안전대책본부 상황별 비상단계 기준 참조", "warning": "비상 1~3단계와 관계기관 조치 연계", "usage": "공식 비상단계 수신값 우선" }
+  ],
+  "notice": "재난유형별 발령기준은 관계 법령과 위기관리 매뉴얼이 정한 공식 기준을 우선하며, 서비스가 임의로 공식 위기경보를 발령하지 않습니다."
+}

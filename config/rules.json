@@ -1,10 +1,17 @@
 {
   "version": 1,
-  "grades": { "normal": 0, "caution": 1, "danger": 2 },
+  "levelSystem": {
+    "name": "서비스 종합판정",
+    "officialSystem": "국가위기경보",
+    "officialBasis": "재난 및 안전관리 기본법 제38조",
+    "notice": "서비스 판정은 공개 관측자료를 이용한 참고정보이며 관계기관이 발령하는 공식 위기경보가 아닙니다."
+  },
+  "grades": { "interest": 1, "caution": 2, "alert": 3, "severe": 4 },
   "rules": [
-    { "id": "heavy-rain-warning", "field": "warning", "operator": "includes", "value": "호우경보", "grade": "danger", "title": "호우경보 발효", "message": "저지대와 하천 주변에 접근하지 마세요.", "action": "지하차도를 피하고 안전한 실내에 머무르세요." },
-    { "id": "hourly-heavy-rain", "field": "rain1h", "operator": "gte", "value": 30, "grade": "danger", "title": "시간당 강한 비 예상", "message": "시간당 30mm 이상의 강한 비가 예상됩니다.", "action": "외출을 자제하고 배수 취약지역을 피하세요." },
-    { "id": "river-danger", "field": "riverStage", "operator": "in", "value": ["경계", "심각"], "grade": "danger", "title": "하천 위험수위", "message": "주변 하천이 위험단계에 도달했습니다.", "action": "하천변과 산책로에 접근하지 마세요." },
+    { "id": "heavy-rain-warning", "field": "warning", "operator": "includes", "value": "호우경보", "grade": "severe", "title": "호우경보 발효", "message": "저지대와 하천 주변에 접근하지 마세요.", "action": "지하차도를 피하고 안전한 실내에 머무르세요." },
+    { "id": "hourly-heavy-rain", "field": "rain1h", "operator": "gte", "value": 30, "grade": "severe", "title": "시간당 강한 비 예상", "message": "시간당 30mm 이상의 강한 비가 예상됩니다.", "action": "외출을 자제하고 배수 취약지역을 피하세요." },
+    { "id": "river-severe", "field": "riverStage", "operator": "in", "value": ["심각"], "grade": "severe", "title": "하천 심각단계", "message": "주변 하천이 최고 위험단계에 도달했습니다.", "action": "하천변에서 즉시 벗어나 관계기관의 대피 안내를 따르세요." },
+    { "id": "river-alert", "field": "riverStage", "operator": "in", "value": ["경계"], "grade": "alert", "title": "하천 경계단계", "message": "주변 하천 수위가 경계단계입니다.", "action": "하천변과 산책로에 접근하지 마세요." },
     { "id": "rain-soon", "all": [{ "field": "rainProbability6h", "operator": "gte", "value": 70 }, { "field": "rain6h", "operator": "gte", "value": 5 }], "grade": "caution", "title": "곧 비가 올 가능성이 높습니다", "message": "6시간 이내 비 가능성이 높습니다.", "action": "우산을 준비하고 이동 전 강수 레이더를 확인하세요." },
     { "id": "strong-wind", "field": "windSpeed", "operator": "gte", "value": 14, "grade": "caution", "title": "강한 바람 관측", "message": "시설물 피해가 발생할 수 있는 바람입니다.", "action": "드론 비행을 미루고 간판과 낙하물을 주의하세요." },
     { "id": "road-control", "field": "roadControlCount", "operator": "gte", "value": 1, "grade": "caution", "title": "주변 도로 통제구간 있음", "message": "이동 경로에 통제구간이 있을 수 있습니다.", "action": "출발 전 우회경로를 확인하세요." }

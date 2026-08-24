@@ -1,0 +1,5 @@
+.safety-banner.interest{border-color:#b7cdf7;background:#eef5ff}.safety-banner.interest .signal{color:#2563eb}
+.safety-banner.caution{border-color:#f0d08a;background:#fff8e6}.safety-banner.caution .signal{color:#b77900}
+.safety-banner.alert{border-color:#ffc38f;background:#fff4e8}.safety-banner.alert .signal{color:#ed6c02}
+.safety-banner.severe{border-color:#f2b8b5;background:#fff0ef}.safety-banner.severe .signal{color:#d92d20}
+.action-card.interest{border-color:#2563eb;background:#eef5ff}.action-card.alert{border-color:#ed6c02;background:#fff4e8}.action-card.severe{border-color:#d92d20;background:#fff0ef}
