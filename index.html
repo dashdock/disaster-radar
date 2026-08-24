@@ -303,7 +303,7 @@
     </div>
   </div>
 
-  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 기상청 AWS 매분 실측자료는 수집 중이며 지점정보 API 승인 후 바람 지도에 연결됩니다. 현재 바람 화살표는 Open-Meteo 모델 기반 자료입니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
+  <div class="rd-footnote">※ 일반 지도는 OpenStreetMap, 위성 지도는 Esri World Imagery, 강수 레이더는 RainViewer 관측 타일을 사용합니다. 바람 화살표는 기상청 AWS 매분 실측자료와 공식 지상관측 지점정보를 사용하며, 확대 단계에 따라 표시 밀도가 조절됩니다. 지도 클릭 행정구역은 OpenStreetMap Nominatim 결과이며, 재난·기상 정보 일부는 목업(mock) 데이터입니다.</div>
   </section>
 </div>
 
@@ -412,6 +412,7 @@
   let windVisible = false;
   let radarObservedAt = null;
   let windObservedAt = null;
+  let kmaAwsStations = [];
   const locationCache = new Map();
 
   function escapeHtml(value) {
@@ -712,51 +713,54 @@
     const status = document.getElementById("rd-weather-status");
     const times = [];
     if (radarVisible && radarObservedAt) times.push(`레이더 ${radarObservedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`);
-    if (windVisible && windObservedAt) times.push(`바람 ${windObservedAt}`);
+    if (windVisible && windObservedAt) times.push(`AWS 바람 ${formatObservedAt(windObservedAt).slice(11)}`);
     status.textContent = times.length ? `${times.join(" · ")} 기준` : "기상 레이어를 선택하세요";
-    status.title = "강수 레이더는 약 10분 간격, 바람은 약 15분 간격의 준실시간 자료입니다.";
+    status.title = "강수 레이더는 약 10분 간격, 바람은 기상청 AWS 매분 실측자료입니다.";
+  }
+
+  function renderKmaWindLayer() {
+    windLayer.clearLayers();
+    if (!kmaAwsStations.length) return;
+    const bounds = map.getBounds().pad(0.15);
+    const gridSize = map.getZoom() <= 7 ? 0.7 : map.getZoom() <= 9 ? 0.3 : 0.1;
+    const occupiedCells = new Set();
+    kmaAwsStations.forEach(station => {
+      if (!bounds.contains([station.latitude, station.longitude])) return;
+      const cell = `${Math.round(station.latitude / gridSize)}:${Math.round(station.longitude / gridSize)}`;
+      if (occupiedCells.has(cell)) return;
+      occupiedCells.add(cell);
+      const direction = Number(station.windDirection1m);
+      const speed = Number(station.windSpeed1m);
+      const icon = L.divIcon({
+        className: "",
+        html: `<div class="rd-wind-marker" title="${escapeHtml(station.stationName || station.stationCode)} 풍향 ${direction.toFixed(0)}°">
+          <span class="rd-wind-arrow" style="transform:rotate(${direction + 180}deg);">↑</span>
+          <span class="rd-wind-speed">${speed.toFixed(1)}m/s</span>
+        </div>`,
+        iconSize: [42, 46], iconAnchor: [21, 23],
+      });
+      L.marker([station.latitude, station.longitude], { icon, zIndexOffset: 700 })
+        .bindTooltip(`${escapeHtml(station.stationName || station.stationCode)} · 풍향 ${direction.toFixed(0)}° · 풍속 ${speed.toFixed(1)}m/s · ${escapeHtml(station.address || "주소 정보 없음")} · ${escapeHtml(formatObservedAt(station.observedAt))}`)
+        .addTo(windLayer);
+    });
   }
 
   async function loadCurrentWind() {
     try {
-      const latitudes = REGIONS.map(region => region.lat).join(",");
-      const longitudes = REGIONS.map(region => region.lng).join(",");
-      const params = new URLSearchParams({
-        latitude: latitudes,
-        longitude: longitudes,
-        current: "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-        wind_speed_unit: "ms",
-        timezone: "Asia/Seoul",
-      });
-      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { cache: "no-store" });
+      const response = await fetch(`data/aws-current.json?t=${Date.now()}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
-      const locations = Array.isArray(payload) ? payload : [payload];
-      windLayer.clearLayers();
-      locations.forEach((location, index) => {
-        const region = REGIONS[index];
-        const current = location.current || {};
-        const direction = Number(current.wind_direction_10m);
-        const speed = Number(current.wind_speed_10m);
-        if (!region || !Number.isFinite(direction) || !Number.isFinite(speed)) return;
-        const icon = L.divIcon({
-          className: "",
-          html: `<div class="rd-wind-marker" title="${escapeHtml(region.name)} 풍향 ${direction}°">
-            <span class="rd-wind-arrow" style="transform:rotate(${direction + 180}deg);">↑</span>
-            <span class="rd-wind-speed">${speed.toFixed(1)}m/s</span>
-          </div>`,
-          iconSize: [42, 46], iconAnchor: [21, 23],
-        });
-        L.marker([region.lat, region.lng], { icon, zIndexOffset: 700 })
-          .bindTooltip(`${escapeHtml(region.name)} · 풍향 ${direction}° · 풍속 ${speed.toFixed(1)}m/s · 돌풍 ${Number(current.wind_gusts_10m || 0).toFixed(1)}m/s`)
-          .addTo(windLayer);
-      });
-      windObservedAt = locations[0]?.current?.time?.slice(11, 16) || null;
+      kmaAwsStations = (payload.stations || []).filter(station =>
+        Number.isFinite(Number(station.latitude)) && Number.isFinite(Number(station.longitude)) &&
+        Number.isFinite(Number(station.windDirection1m)) && Number.isFinite(Number(station.windSpeed1m))
+      );
+      windObservedAt = payload.observedAt || null;
+      renderKmaWindLayer();
       updateWeatherStatus();
     } catch (error) {
       windVisible = false;
-      document.getElementById("rd-weather-status").textContent = "바람 데이터 수신 실패";
-      console.error("Failed to load current wind", error);
+      document.getElementById("rd-weather-status").textContent = "기상청 AWS 바람 수신 실패";
+      console.error("Failed to load KMA AWS wind", error);
     }
   }
 
@@ -767,10 +771,10 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       const validWind = (payload.stations || []).filter(station => station.windSpeed1m != null && station.windDirection1m != null).length;
-      status.textContent = `기상청 AWS ${Number(payload.stationCount || 0).toLocaleString()} · ${formatObservedAt(payload.observedAt).slice(11)}`;
-      status.title = `실측 풍향·풍속 유효 ${validWind.toLocaleString()}개 · 지점정보 API 승인 후 지도 연결`;
-      document.getElementById("rd-summary-aws").textContent = `${Number(payload.stationCount || 0).toLocaleString()}개`;
-      document.getElementById("rd-summary-aws-meta").textContent = `${formatObservedAt(payload.observedAt)} · 풍향풍속 ${validWind.toLocaleString()}개 유효`;
+      status.textContent = `기상청 AWS ${Number(payload.locatedStationCount || payload.stationCount || 0).toLocaleString()} · ${formatObservedAt(payload.observedAt).slice(11)}`;
+      status.title = `공식 위치 연결 ${Number(payload.locatedStationCount || 0).toLocaleString()}개 · 실측 풍향·풍속 유효 ${validWind.toLocaleString()}개`;
+      document.getElementById("rd-summary-aws").textContent = `${Number(payload.locatedStationCount || payload.stationCount || 0).toLocaleString()}개 지점`;
+      document.getElementById("rd-summary-aws-meta").textContent = `${formatObservedAt(payload.observedAt)} · 공식 위치 연결 · 풍향풍속 ${validWind.toLocaleString()}개 유효`;
     } catch (error) {
       status.textContent = "기상청 AWS 수신 실패";
       status.title = "AWS 실측 JSON을 불러오지 못했습니다.";
@@ -796,6 +800,10 @@
 
   document.getElementById("rd-weather-map-select").addEventListener("change", event => {
     applyWeatherMapSelection(event.target.value);
+  });
+
+  map.on("moveend", () => {
+    if (windVisible && kmaAwsStations.length) renderKmaWindLayer();
   });
 
   function administrativePath(address) {
