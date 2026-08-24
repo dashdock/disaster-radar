@@ -51,6 +51,14 @@
   .rd-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .rd-legends-wrap { margin-bottom: 16px; }
 
+  .rd-summary-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
+  .rd-summary-card { background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; min-width: 0; }
+  .rd-summary-label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 10.5px; }
+  .rd-summary-value { margin-top: 5px; color: var(--text); font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
+  .rd-summary-meta { margin-top: 2px; color: var(--text-faint); font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rd-summary-card.warning { border-color: #FFC2C2; background: #FFF8F8; }
+  .rd-summary-card.warning .rd-summary-value { color: #D83939; }
+
   .rd-main { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); gap: 16px; }
   .rd-map-panel { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
   .rd-map-head { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -120,6 +128,21 @@
   .rd-wind-marker { width: 42px; padding: 4px 2px; border: 1px solid rgba(35,93,199,0.35); border-radius: 7px; background: rgba(255,255,255,0.9); color: #235DC7; text-align: center; box-shadow: 0 2px 8px rgba(23,32,51,0.12); }
   .rd-wind-arrow { display: block; font-size: 20px; line-height: 19px; transform-origin: center; }
   .rd-wind-speed { display: block; color: #334158; font-size: 9px; font-weight: 700; white-space: nowrap; }
+
+  @media (max-width: 980px) {
+    .rd-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .rd-main { grid-template-columns: 1fr; }
+    #rd-map { height: 480px; }
+  }
+  @media (max-width: 600px) {
+    .rd-root { padding: 12px; }
+    .rd-summary-grid { gap: 7px; }
+    .rd-summary-card { padding: 10px; }
+    .rd-summary-value { font-size: 17px; }
+    .rd-map-actions { align-items: stretch; }
+    .rd-weather-status { max-width: 140px; }
+    #rd-map { height: 420px; }
+  }
 </style>
 
 <div class="rd-root">
@@ -159,6 +182,29 @@
     <button type="button" id="rd-alert-banner-close" aria-label="알림 닫기">✕</button>
   </div>
 
+  <div class="rd-summary-grid" aria-label="실시간 데이터 요약">
+    <div class="rd-summary-card">
+      <div class="rd-summary-label">★ 관심 지역</div>
+      <div class="rd-summary-value" id="rd-summary-watched">0곳</div>
+      <div class="rd-summary-meta">브라우저에 안전하게 저장</div>
+    </div>
+    <div class="rd-summary-card">
+      <div class="rd-summary-label">💨 기상청 AWS 실측</div>
+      <div class="rd-summary-value" id="rd-summary-aws">확인 중</div>
+      <div class="rd-summary-meta" id="rd-summary-aws-meta">최신 매분자료 수신 확인</div>
+    </div>
+    <div class="rd-summary-card">
+      <div class="rd-summary-label">💧 수문 센서</div>
+      <div class="rd-summary-value" id="rd-summary-hydrology">확인 중</div>
+      <div class="rd-summary-meta">수위·강우·댐·보 합계</div>
+    </div>
+    <div class="rd-summary-card" id="rd-summary-alert-card">
+      <div class="rd-summary-label">⚠ 관심 지역 경고</div>
+      <div class="rd-summary-value" id="rd-summary-alerts">0건</div>
+      <div class="rd-summary-meta">공식 기준 초과 센서</div>
+    </div>
+  </div>
+
   <div class="rd-main">
     <div class="rd-map-panel">
       <div class="rd-map-head">
@@ -186,7 +232,7 @@
 
   <div class="rd-ticker">
     <div class="rd-ticker-live">
-      <span class="rd-mono" style="font-size:11px;color:#FF8A3D;">● LIVE</span>
+      <span class="rd-mono" style="font-size:11px;color:#8491A6;">● MOCK FEED</span>
     </div>
     <div class="rd-ticker-track-wrap">
       <div class="rd-ticker-track" id="rd-ticker-track"></div>
@@ -292,6 +338,8 @@
   const weirLayer = L.layerGroup();
   let sensorStations = [];
   let hydrologySensors = [];
+  let waterSensorCount = 0;
+  let auxiliarySensorCount = 0;
   let sensorsVisible = true;
   let radarLayer = null;
   let radarVisible = false;
@@ -314,6 +362,15 @@
 
   function storeSet(key, set) {
     localStorage.setItem(key, JSON.stringify([...set]));
+  }
+
+  function updateWatchedSummary() {
+    document.getElementById("rd-summary-watched").textContent = `${getStoredSet(WATCHED_REGIONS_KEY).size}곳`;
+  }
+
+  function updateHydrologySummary() {
+    const total = waterSensorCount + auxiliarySensorCount;
+    document.getElementById("rd-summary-hydrology").textContent = total ? `${total.toLocaleString()}개` : "확인 중";
   }
 
   function formatObservedAt(value) {
@@ -465,9 +522,13 @@
       const validWind = (payload.stations || []).filter(station => station.windSpeed1m != null && station.windDirection1m != null).length;
       status.textContent = `기상청 AWS ${Number(payload.stationCount || 0).toLocaleString()} · ${formatObservedAt(payload.observedAt).slice(11)}`;
       status.title = `실측 풍향·풍속 유효 ${validWind.toLocaleString()}개 · 지점정보 API 승인 후 지도 연결`;
+      document.getElementById("rd-summary-aws").textContent = `${Number(payload.stationCount || 0).toLocaleString()}개`;
+      document.getElementById("rd-summary-aws-meta").textContent = `${formatObservedAt(payload.observedAt)} · 풍향풍속 ${validWind.toLocaleString()}개 유효`;
     } catch (error) {
       status.textContent = "기상청 AWS 수신 실패";
       status.title = "AWS 실측 JSON을 불러오지 못했습니다.";
+      document.getElementById("rd-summary-aws").textContent = "수신 실패";
+      document.getElementById("rd-summary-aws-meta").textContent = "자동 수집 상태를 확인하세요";
       console.error("Failed to load KMA AWS status", error);
     }
   }
@@ -585,6 +646,8 @@
     const watchedRegions = getStoredSet(WATCHED_REGIONS_KEY);
     const alertLevels = new Set(["관심", "주의", "경계", "심각", "기준초과"]);
     const alerts = stations.filter(station => watchedRegions.has(station.regionId) && alertLevels.has(station.status));
+    document.getElementById("rd-summary-alerts").textContent = `${alerts.length}건`;
+    document.getElementById("rd-summary-alert-card").classList.toggle("warning", alerts.length > 0);
     showAlertBanner(alerts);
 
     const notifiedEvents = getStoredSet(NOTIFIED_SENSOR_EVENTS_KEY);
@@ -678,6 +741,8 @@
       renderAuxiliaryLayer(payload.dams || [], damLayer, { color: "#7757C8", radius: 5 });
       renderAuxiliaryLayer(payload.weirs || [], weirLayer, { color: "#00A5A8", radius: 5 });
       hydrologySensors = [...(payload.rainfall || []), ...(payload.dams || []), ...(payload.weirs || [])];
+      auxiliarySensorCount = hydrologySensors.length;
+      updateHydrologySummary();
       document.getElementById("rd-rainfall-toggle").textContent = `☔ 강우 ${payload.counts?.rainfall || 0}`;
       document.getElementById("rd-dam-toggle").textContent = `🏞 댐 ${payload.counts?.dams || 0}`;
       document.getElementById("rd-weir-toggle").textContent = `🌉 보 ${payload.counts?.weirs || 0}`;
@@ -695,6 +760,8 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       sensorStations = Array.isArray(payload.stations) ? payload.stations : [];
+      waterSensorCount = sensorStations.length;
+      updateHydrologySummary();
       renderWaterSensors(sensorStations);
       const activeCount = sensorStations.filter(station => station.waterLevel != null).length;
       toggle.textContent = `💧 수위 센서 ${activeCount.toLocaleString()}개 · 10분 갱신`;
@@ -752,7 +819,7 @@
         </div>
       </div>
       <div>
-        <div class="rd-row-label">🌤 실시간 기상</div>
+        <div class="rd-row-label">🌤 지역 기상 요약 <span style="color:var(--text-faint);">· 목업</span></div>
         <div class="rd-row-value">${region.cond} · ${region.temp}°C · 강수확률 ${region.precip}%</div>
       </div>
       <div>
@@ -798,6 +865,7 @@
         }
       }
       storeSet(WATCHED_REGIONS_KEY, watchedRegions);
+      updateWatchedSummary();
       render();
       checkWatchedRegionAlerts([...sensorStations, ...hydrologySensors]);
     });
@@ -839,6 +907,7 @@
   }
 
   renderDetail(REGIONS.find(r => r.id === selectedId));
+  updateWatchedSummary();
 
   // Search
   const searchInput = document.getElementById("rd-search");
